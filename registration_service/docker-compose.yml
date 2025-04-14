@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2002
+      POSTGRES_DB: reg_service
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  registration_service:
+    build: .
+    environment:
+      DB_USER: postgres
+      DB_PASSWORD: 2002
+      DB_HOST: postgres  
+      DB_PORT: 5432
+      DB_NAME: localhost
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
