@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/jackc/pgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -34,28 +35,45 @@ func InitDB() {
 	log.Println("Connected to PostgreSQL via pgxpool.")
 }
 
-func diminish(inst_name, credits) (bool, error) {
+func Diminish(inst_name string, credits int) (bool, error) {
 	ctx := context.Background()
 
-	checkQuery := `SELECT credits FROM credits_inst WHERE name = $1`
-	var current_credits int
-	err := Pool.QueryRow(ctx, checkQuery, inst_name).Scan(&current_credits)
-
-	if err == nil && current_credits == 0 {
-		return false, fmt.Errorf("Not enough credits for this operation")
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		log.Printf("Failed to begin transaction: %v", err)
+		return false, err
 	}
-	elseif err != nil {
-		log.Printf("Failed to diminish credits: %v", err)
+	defer tx.Rollback(ctx) // Safely rollback if anything fails
+
+	checkQuery := `SELECT credits FROM credits_inst WHERE name = $1 FOR UPDATE` //LOCK TO AVOID RACE CONDITION IN DB
+	var current_credits int
+	err = tx.QueryRow(ctx, checkQuery, inst_name).Scan(&current_credits)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return false, fmt.Errorf("institution '%s' not found", inst_name)
+		}
+		log.Printf("Failed to check credits: %v", err)
 		return false, err
 	}
 
-	insertQuery := `UPDATE credits_inst SET credits = credits - 1 WHERE name = $1`;
+	if current_credits < credits {
+		return false, fmt.Errorf("insufficient credits (current: %d)", current_credits)
+	}
 
-	_, err = Pool.Exec(ctx, insertQuery, inst_name)
+	insertQuery := `UPDATE credits_inst SET credits = credits - $1 WHERE name = $2`
+
+	_, err = tx.Exec(ctx, insertQuery, credits, inst_name)
 
 	if err != nil {
 		log.Printf("Failed to make the diminsh: %v", err)
-		return 0, err
+		return false, err
+	}
+
+	//Commit the transaction
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("Failed to commit transaction: %v", err)
+		return false, err
 	}
 
 	return true, nil

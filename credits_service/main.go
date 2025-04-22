@@ -2,10 +2,10 @@
 package main
 
 import (
+	"credits_service/dbService"
+	"credits_service/routers"
 	"log"
 	"os"
-	"registration_service/dbService"
-	"registration_service/routers"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -20,7 +20,7 @@ func main() {
 
 	router := gin.Default()
 
-	routers.RegisterRoutes(router)
+	routers.CreditRoutes(router)
 
 	port := os.Getenv("PORT")
 	if port == "" {
