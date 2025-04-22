@@ -7,7 +7,7 @@ func main() {
 
 	// GET ENDPOINT
 	server.GET("/review-request", func(ctx *gin.Context) {
-		ctx.String(200, "hello from grade_review_request_service")
+		ctx.String(200, "hello from grade review request service")
 	})
 
 	server.Run(":8081")
