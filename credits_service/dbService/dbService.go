@@ -79,3 +79,31 @@ func Diminish(inst_name string, credits int) (bool, error) {
 	return true, nil
 
 }
+
+func BuyCredits(inst_name string, credits int) (bool, error) {
+	ctx := context.Background()
+
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		log.Printf("Failed to begin transaction: %v", err)
+		return false, err
+	}
+	defer tx.Rollback(ctx) // Safely rollback if anything fails
+
+	insertQuery := `UPDATE credits_inst SET credits = credits + $1 WHERE name = $2`
+
+	_, err = tx.Exec(ctx, insertQuery, credits, inst_name)
+
+	if err != nil {
+		log.Printf("Failed to make the purchase: %v", err)
+		return false, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("Failed to commit transaction: %v", err)
+		return false, err
+	}
+
+	return true, nil
+
+}

@@ -11,7 +11,7 @@ func CreditRoutes(router *gin.Engine) {
 	api := router.Group("/")
 
 	api.PUT("/spend_credit", controllers.SpendController)
-
+	api.PUT("/buy_credit", controllers.BuyController)
 	router.GET("/", func(c *gin.Context) {
 		c.String(200, "Simple root-route")
 	})
