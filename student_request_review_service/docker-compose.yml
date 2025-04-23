@@ -11,7 +11,7 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./reviewsdb.sql:/docker-entrypoint-initdb.d/reviewsdb.sql
+      - ./db/reviewsdb.sql:/docker-entrypoint-initdb.d/reviewsdb.sql
 
   app:
     build: .
