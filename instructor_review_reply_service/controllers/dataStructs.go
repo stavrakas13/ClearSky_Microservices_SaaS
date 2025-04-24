@@ -17,14 +17,19 @@ type ReviewSummary struct {
 	}
 */
 type ReviewStruct struct {
-	Review_id                int        `json:"review_id"`
 	Student_id               int        `json:"student_id"`
 	Course_id                int        `json:"course_id"`
 	Student_message          string     `json:"student_message"`
 	Status                   string     `json:"status"`
 	Instructor_reply_message *string    `json:"instructor_reply_message"`
+	Instructor_action        *string    `jason:"Instructor_action"`
 	Review_created_at        time.Time  `json:"review_created_at"`
 	Reviewed_at              *time.Time `json:"reviewed_at"`
+}
+
+type InstructorReply struct {
+	InstructorReply  string `json:"instructor_reply_message" binding:"required"`
+	InstructorAction string `json:"instructor_action" binding:"required"`
 }
 
 // DUMMY DATA TO TEST THE SERVICE
