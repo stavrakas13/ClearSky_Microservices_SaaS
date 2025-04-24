@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:17.4
+    container_name: stats_mypostgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypass
+      POSTGRES_DB: mydb
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d
+    networks:
+      - backendnet
+
+  api:
+    build:
+      context: ./backend
+    container_name: stats_backend
+    ports:
+      - "8083:8080"
+    environment:
+      DB_DSN: host=db user=myuser password=mypass dbname=mydb port=5432 sslmode=disable
+    depends_on:
+      - db
+    networks:
+      - backendnet
+    restart: on-failure
+
+networks:
+  backendnet:
