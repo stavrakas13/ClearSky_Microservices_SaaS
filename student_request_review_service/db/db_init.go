@@ -23,10 +23,6 @@ func InitDB() {
 		log.Fatal("Failed to connect to DB:", err)
 	}
 
-	if err = DB.Ping(); err != nil {
-		log.Fatal("DB ping failed:", err)
-	}
-
 	log.Println("Connected to reviewsdb.")
 }
 
