@@ -31,6 +31,15 @@ CREATE TABLE IF NOT EXISTS grades (
     q10 NUMERIC(10,2) CHECK (q10 BETWEEN 0 AND 10)
 );
 
+CREATE TABLE IF NOT EXISTS grade_distributions (
+    id SERIAL PRIMARY KEY,
+    class_id TEXT,
+    exam_date TEXT,
+    category TEXT,           -- π.χ. "total_mark", "q01", ...
+    value INTEGER,           -- π.χ. 5 (βαθμός)
+    count INTEGER            -- π.χ. 7 (πόσοι πήραν 5)
+);
+
 -- προτεινόμενα indexes για συχνά queries (προαιρετικά):
 CREATE INDEX IF NOT EXISTS idx_grades_class ON grades (class_id);
 CREATE INDEX IF NOT EXISTS idx_grades_total_mark ON grades (total_mark);

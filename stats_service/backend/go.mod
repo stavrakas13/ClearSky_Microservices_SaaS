@@ -1,4 +1,4 @@
-module stats_backend
+module backend
 
 go 1.22.2
 

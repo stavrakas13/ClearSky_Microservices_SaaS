@@ -7,7 +7,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"stats_backend/models"
+	"backend/services"
 )
 
 func main() {
@@ -23,13 +23,9 @@ func main() {
 
 	log.Println("✅ Connected to PostgreSQL")
 
-	var grades []models.Grade
-	result := db.Find(&grades)
-	if result.Error != nil {
-		log.Fatalf("❌ Failed to fetch grades: %v", result.Error)
+	err = services.CalculateDistributions(db, "ΤΕΧΝΟΛΟΓΙΑ ΛΟΓΙΣΜΙΚΟΥ   (3205)", "2024-2025 ΧΕΙΜ 2024")
+	if err != nil {
+		log.Fatal("Σφάλμα στον υπολογισμό κατανομής:", err)
 	}
 
-	for _, g := range grades {
-		log.Printf("📊 StudentID: %s | CourseID: %s | Grade: %.2f", g.StudentID, g.CourseID, g.Grade)
-	}
 }
