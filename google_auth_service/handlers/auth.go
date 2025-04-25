@@ -105,3 +105,22 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 }
+
+// LogoutHandler διαγράφει το token cookie
+func LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	// Για να διαγράψουμε cookie, το κάνουμε expired
+	cookie := http.Cookie{
+		Name:     "token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1, // Λέει στο browser να διαγράψει το cookie αμέσως
+		HttpOnly: true,
+		Secure:   false, // Σε HTTPS το κάνεις true
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	http.SetCookie(w, &cookie)
+
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte("<h1>Logout successful!</h1>"))
+}

@@ -20,7 +20,7 @@ func main() {
 
 	http.HandleFunc("/auth/google/login", handlers.GoogleLoginHandler)
 	http.HandleFunc("/auth/google/callback", handlers.GoogleCallbackHandler)
-
+	http.HandleFunc("/auth/logout", handlers.LogoutHandler)
 	protected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Welcome to the protected route!"))
 	})
