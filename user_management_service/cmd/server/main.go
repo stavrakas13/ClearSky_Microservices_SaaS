@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"user_management_service/internal/config"
+	"user_management_service/internal/messaging"
 	"user_management_service/internal/middleware"
 
 	"user_management_service/internal/handler"
@@ -13,9 +14,16 @@ import (
 )
 
 func main() {
+
 	db := config.SetupDatabase()
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
+
+	ch, err := messaging.ConnectRabbitMQ()
+	if err != nil {
+		log.Fatal("RabbitMQ connection failed:", err)
+	}
+	messaging.ConsumeAuthQueue(ch, db)
 
 	r := gin.Default()
 	r.POST("/register", handler.Register(db))

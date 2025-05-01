@@ -1,21 +1,32 @@
-# Χρησιμοποιούμε επίσημο Go image
-FROM golang:1.22
+# Stage 1: Build
+FROM golang:1.24-alpine AS builder
 
-# Δημιουργούμε φάκελο εργασίας μέσα στο container
 WORKDIR /app
 
-# Αντιγράφουμε τα αρχεία Go Modules πρώτα (optimization για caching)
+# Εγκατάσταση build dependencies (για alpine)
+RUN apk add --no-cache git
+
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Μετά αντιγράφουμε όλο το project
 COPY . .
 
-# Κάνουμε build το project
+# Build binary
 RUN go build -o user_management_service ./cmd/server
 
-# Το container ακούει στο port 8082
+# Stage 2: Runtime
+FROM alpine:latest
+
+# Εγκατάσταση runtime βιβλιοθηκών
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /root/
+
+# Αντιγραφή binary από builder
+COPY --from=builder /app/user_management_service .
+
+# Άνοιγμα port (matching με docker-compose)
 EXPOSE 8082
 
-# Default command όταν ξεκινάει το container
+# Εκκίνηση
 CMD ["./user_management_service"]
