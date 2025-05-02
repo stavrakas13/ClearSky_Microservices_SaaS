@@ -1,77 +1,78 @@
 package services
 
 import (
+	//"encoding/json"
+	"backend/models"
 	"fmt"
 	"log"
+	"math"
 
 	"gorm.io/gorm"
 )
 
-func CalculateDistributions(db *gorm.DB, classID string, examDate string) error {
-	type Grade struct {
-		ClassID   string
-		ExamDate  string
-		TotalMark float64
-		Q01       float64
-		Q02       float64
-		Q03       float64
-		Q04       float64
-		Q05       float64
-		Q06       float64
-		Q07       float64
-		Q08       float64
-		Q09       float64
-		Q10       float64
-	}
+type Grade struct {
+	ExamDate       string            `gorm:"column:exam_date"`
+	ClassID        string            `gorm:"column:class_id"`
+	StudentID      string            `gorm:"column:student_id"`
+	QuestionScores models.FloatSlice `gorm:"type:jsonb"`
+	TotalScore     float64           `gorm:"column:total_score"`
+}
 
+func CalculateDistributions(db *gorm.DB, classID string, examDate string) error {
 	var grades []Grade
-	err := db.Table("grades").
-		Where("class_id = ? AND exam_date = ?", classID, examDate).
-		Find(&grades).Error
-	if err != nil {
+	var exam models.Exam
+	if err := db.Where("class_id = ? AND exam_date = ?", classID, examDate).Find(&grades).Error; err != nil {
 		return err
 	}
 
-	distributions := make(map[string]map[int]int)
-	fields := []string{"total_mark", "q01", "q02", "q03", "q04", "q05", "q06", "q07", "q08", "q09", "q10"}
+	if err := db.Where("class_id = ? AND exam_date = ?", classID, examDate).First(&exam).Error; err != nil {
+		return err
+	}
 
-	// αρχικοποιούμε τους πίνακες
-	for _, f := range fields {
-		distributions[f] = make(map[int]int)
-		for i := 0; i <= 10; i++ {
-			distributions[f][i] = 0
+	numQuestions := len(exam.Weights)
+	if numQuestions == 0 {
+		return fmt.Errorf("no weights found for exam %s / %s", classID, examDate)
+	}
+
+	// Αρχικοποίηση κατανομής για κάθε ερώτηση
+	distributions := make(map[string]map[int]int)
+	for i := 0; i < numQuestions; i++ {
+		qName := fmt.Sprintf("q%02d", i+1)
+		distributions[qName] = make(map[int]int)
+		for v := int(exam.MarkScale.Min); v <= int(exam.MarkScale.Max); v++ {
+			distributions[qName][v] = 0
 		}
 	}
 
-	// αναλυση των βαθμών
+	// Επεξεργασία κάθε βαθμού
 	for _, g := range grades {
-		distributions["total_mark"][int(g.TotalMark)]++
-		distributions["q01"][int(g.Q01)]++
-		distributions["q02"][int(g.Q02)]++
-		distributions["q03"][int(g.Q03)]++
-		distributions["q04"][int(g.Q04)]++
-		distributions["q05"][int(g.Q05)]++
-		distributions["q06"][int(g.Q06)]++
-		distributions["q07"][int(g.Q07)]++
-		distributions["q08"][int(g.Q08)]++
-		distributions["q09"][int(g.Q09)]++
-		distributions["q10"][int(g.Q10)]++
+		for i, score := range g.QuestionScores {
+			if i >= numQuestions {
+				continue
+			}
+			qName := fmt.Sprintf("q%02d", i+1)
+			rounded := int(math.Round(score))
+			if _, ok := distributions[qName][rounded]; ok {
+				distributions[qName][rounded]++
+			}
+		}
 	}
 
-	// εκτύπωση στο terminal
-	for field, dist := range distributions {
-		fmt.Printf("\n📊 Κατανομή για: %s\n", field)
+	// Εκτύπωση και αποθήκευση στη βάση
+	for q, dist := range distributions {
+		fmt.Printf("\n📊 Κατανομή για: %s\n", q)
 		for value, count := range dist {
 			fmt.Printf("Βαθμός %d: %d φοιτητές\n", value, count)
 
-			// αποθήκευση στη βάση
 			err := db.Exec(`
-				INSERT INTO grade_distributions (class_id, exam_date, category, value, count)
-				VALUES (?, ?, ?, ?, ?)
-			`, classID, examDate, field, value, count).Error
+                INSERT INTO grade_distributions (class_id, exam_date, category, value, count)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (class_id, exam_date, category, value)
+                DO UPDATE SET count = EXCLUDED.count
+            `, classID, examDate, q, value, count).Error
 
 			if err != nil {
-				log.Printf("❌ DB insert failed for %s/%d: %v", field, value, err)
+				log.Printf("❌ DB insert failed for %s/%d: %v", q, value, err)
 			}
 		}
 	}

@@ -1,9 +1,9 @@
 package models
 
 type Grade struct {
-	ExamDate       string    `gorm:"primaryKey;column:exam_date"`
-	ClassID        string    `gorm:"primaryKey;column:class_id"`
-	StudentID      string    `gorm:"primaryKey;column:student_id"`
-	QuestionScores []float64 `gorm:"type:jsonb"`
+	ExamDate       string
+	ClassID        string
+	StudentID      string
+	QuestionScores FloatSlice
 	TotalScore     float64
 }

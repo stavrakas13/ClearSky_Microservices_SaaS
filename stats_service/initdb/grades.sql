@@ -1,5 +1,5 @@
-INSERT INTO exams (exam_date, class_id, uni_id, teacher_id, mark_scale, weights, student_ids)
-VALUES ('2024-2025 ΧΕΙΜ 2024', 'ΤΕΧΝΟΛΟΓΙΑ ΛΟΓΙΣΜΙΚΟΥ (3205)', 'NTUA', 'T3205', '{"min": 0, "max": 10}', '[5.0, 40.0, 5.0, 5.0, 5.0, 5.0, 20.0, 5.0, 5.0, 5.0]', '["03184623", "03184610", "03184620", "03184621", "03184625", "03170676", "03184618", "03180915"]');
+INSERT INTO exams (exam_date, class_id, uni_id, teacher_id, mark_scale, weights )
+VALUES ('2024-2025 ΧΕΙΜ 2024', 'ΤΕΧΝΟΛΟΓΙΑ ΛΟΓΙΣΜΙΚΟΥ (3205)', 'NTUA', 'T3205', '{"min": 0, "max": 10}', '[5.0, 40.0, 5.0, 5.0, 5.0, 5.0, 20.0, 5.0, 5.0, 5.0]' );
 
 INSERT INTO grades (exam_date, class_id, student_id, question_scores, total_score) VALUES ('2024-2025 ΧΕΙΜ 2024', 'ΤΕΧΝΟΛΟΓΙΑ ΛΟΓΙΣΜΙΚΟΥ (3205)', '03184623', '[8.0, 4.0, 3.0, 8.0, 9.0, 7.0, 10.0, 1.0, 4.0, 8.0]', 6.0);
 INSERT INTO grades (exam_date, class_id, student_id, question_scores, total_score) VALUES ('2024-2025 ΧΕΙΜ 2024', 'ΤΕΧΝΟΛΟΓΙΑ ΛΟΓΙΣΜΙΚΟΥ (3205)', '03184610', '[6.0, 2.0, 3.0, 4.0, 9.0, 8.0, 2.0, 3.0, 5.0, 10.0]', 3.6);
