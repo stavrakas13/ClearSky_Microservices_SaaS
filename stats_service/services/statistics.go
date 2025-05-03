@@ -2,10 +2,10 @@ package services
 
 import (
 	//"encoding/json"
-	"backend/models"
 	"fmt"
 	"log"
 	"math"
+	"stats_service/models"
 
 	"gorm.io/gorm"
 )
