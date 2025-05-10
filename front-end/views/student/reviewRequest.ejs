@@ -1,0 +1,42 @@
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <h2>Student name, email,</h2>
+    <table>
+      <thead><tr><th>course name</th><th>exam period</th><th>grading status</th><th>action</th></tr></thead>
+      <tbody>
+        <tr style="background:#e6e7ea;">
+          <td>physics</td><td>spring 2025</td><td>open</td>
+          <td>
+            <button class="button">view my grades</button>
+            <button class="button">ask for review</button>
+            <button class="button button--secondary" disabled>view review status</button>
+          </td>
+        </tr>
+        <tr><td>software</td><td>fall 2024</td><td>closed</td>
+            <td><button class="button">view my grades</button>
+                <button class="button button--secondary" disabled>ask for review</button>
+                <button class="button">view review status</button></td></tr>
+        <tr><td>mathematics</td><td>fall 2024</td><td>closed</td>
+            <td><button class="button">view my grades</button>
+                <button class="button button--secondary" disabled>ask for review</button>
+                <button class="button button--secondary" disabled>view review status</button></td></tr>
+      </tbody>
+    </table>
+
+    <div class="panel">
+      <div class="panel-header">NEW REVIEW REQUEST&nbsp;&nbsp;physics – spring 2025</div>
+      <form action="/api/appeals" method="post">
+        <label>Message to instructor</label>
+        <textarea name="message" style="width:100%;height:120px;"
+          placeholder="please review my grade. I deserve something higher!!!"></textarea>
+        <button class="button" style="float:right;margin-top:0.6rem;">submit grade review request</button>
+        <div style="clear:both;"></div>
+      </form>
+    </div>
+  </main>
+</body></html>

@@ -1,0 +1,15 @@
+<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <fieldset><legend>Institutions</legend>
+      <form action="/api/institution" method="post">
+        <div class="form-group"><label>Name</label><input name="name" required/></div>
+        <div class="form-group"><label>Domain</label><input name="domain" required/></div>
+        <div class="form-group"><label>Contact e‑mail</label><input name="email" type="email" required/></div>
+        <button class="button">Save</button>
+      </form>
+    </fieldset>
+    <%- include('../partials/messageBox') %>
+  </main>
+</body></html>

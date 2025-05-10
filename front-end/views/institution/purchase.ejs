@@ -1,0 +1,13 @@
+<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <fieldset><legend>Buy credits</legend>
+      <form action="/api/credits" method="post">
+        <input type="number" name="amount" min="1" required style="width:120px;"/>
+        <button class="button">Buy</button>
+      </form>
+    </fieldset>
+    <%- include('../partials/messageBox') %>
+  </main>
+</body></html>

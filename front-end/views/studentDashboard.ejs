@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title }) %>
+</head>
+<body>
+  <%- include('partials/navbar', { user }) %>
+  <main class="container">
+    <h1>Student Dashboard</h1>
+
+    <!-- UC02 – personal grades table (unchanged) -->
+    … existing grades table …
+
+    <!-- UC03 – Grade review request -->
+    <h2>Request grade review</h2>
+    <form action="/api/appeals" method="post">
+      <div class="form-group">
+        <label for="course">Course</label>
+        <select id="course" name="course" required><!-- populated server‑side --></select>
+      </div>
+
+      <div class="form-group">
+        <label for="gradeItem">Grade item (e.g. “Midterm”)</label>
+        <input id="gradeItem" name="gradeItem" required />
+      </div>
+
+      <div class="form-group">
+        <label for="current">Current score</label>
+        <input id="current" name="current" type="number" step="0.1" readonly />
+      </div>
+
+      <div class="form-group">
+        <label for="requested">Requested score</label>
+        <input id="requested" name="requested" type="number" step="0.1" required />
+      </div>
+
+      <div class="form-group">
+        <label for="reason">Justification</label>
+        <textarea id="reason" name="reason" rows="4" required></textarea>
+      </div>
+
+      <button class="button" type="submit">Submit request</button>
+    </form>
+
+    <!-- UC05 – feedback list placeholder -->
+    … feedback list …
+  </main>
+  <script type="module" src="/script.js"></script>
+</body>
+</html>
