@@ -9,10 +9,12 @@ import (
 	"google_auth_service/database"
 	"google_auth_service/handlers"
 	"google_auth_service/middlewares"
+	"google_auth_service/rabbitmq"
 )
 
 func main() {
 	database.ConnectDatabase()
+	rabbitmq.Connect()
 	port := "8086"
 	if os.Getenv("PORT") != "" {
 		port = os.Getenv("PORT")

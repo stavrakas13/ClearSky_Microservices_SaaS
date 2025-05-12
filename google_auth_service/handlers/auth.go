@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"google_auth_service/database"
+	"google_auth_service/rabbitmq"
 	"google_auth_service/utils"
 	"net/http"
 	"os"
@@ -103,7 +104,7 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		database.DB.Create(&user)
 	}
-
+	rabbitmq.PublishLoginEvent(email)
 }
 
 // LogoutHandler διαγράφει το token cookie
