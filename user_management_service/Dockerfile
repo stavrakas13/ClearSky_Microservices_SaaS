@@ -1,32 +1,32 @@
-# Stage 1: Build
+# Stage 1: builder με CGO_ENABLED=1
 FROM golang:1.24-alpine AS builder
 
-WORKDIR /app
+# Ενεργοποιούμε CGO και εγκαθιστούμε τα C-dependencies
+ENV CGO_ENABLED=1
+RUN apk add --no-cache gcc musl-dev sqlite-dev git
 
-# Εγκατάσταση build dependencies (για alpine)
-RUN apk add --no-cache git
+WORKDIR /app
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-
-# Build binary
+# Χτίζουμε το binary (θα συμπεριλάβει και το sqlite-driver)
 RUN go build -o user_management_service ./cmd/server
 
-# Stage 2: Runtime
+# Stage 2: runtime
 FROM alpine:latest
-
-# Εγκατάσταση runtime βιβλιοθηκών
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates sqlite
 
 WORKDIR /root/
-
-# Αντιγραφή binary από builder
+# Αντιγράφουμε το binary
 COPY --from=builder /app/user_management_service .
 
-# Άνοιγμα port (matching με docker-compose)
+# Δηλώνουμε τον φάκελο όπου θα γραφτεί η SQLite DB (προαιρετικό)
+VOLUME ["/root"]
+
+# Άνοιγμα port
 EXPOSE 8082
 
-# Εκκίνηση
+# Εκκίνηση της εφαρμογής
 CMD ["./user_management_service"]

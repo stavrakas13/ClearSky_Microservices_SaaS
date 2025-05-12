@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+
+  orchestrator:
+    build: .
+    environment:
+      CONFIG_PATH: configs/config.dev.yaml
+    depends_on:
+      rabbitmq:
+        condition: service_healthy

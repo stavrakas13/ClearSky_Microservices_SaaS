@@ -1,0 +1,21 @@
+rabbitmq:
+  url: "amqp://admin:admin@rabbitmq:5672/"
+exchange:
+  name: "clearsky.events"
+  type: "topic"
+queue:
+  name: "Orchestrator_Q"
+  dlx: "orchestrator.dlq"
+bindings:
+  - "institution.registered"
+  - "user.created"
+  - "statistics.viewed"
+  - "grades.viewed"
+  - "grades.initial.uploaded"
+  - "grades.final.uploaded"
+  - "credits.avail"
+  - "credits.spent"
+  - "credits.purchased"
+  - "user.login.google"
+  - "grades.review.requested"
+  - "grades.review.responded"

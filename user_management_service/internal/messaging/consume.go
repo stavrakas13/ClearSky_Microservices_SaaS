@@ -1,55 +1,65 @@
+// file: user_management_service/messaging/consumer.go
 package messaging
 
 import (
 	"encoding/json"
 	"log"
 	"user_management_service/internal/model"
+	"user_management_service/pkg/jwt"
 
 	"github.com/google/uuid"
-	"github.com/rabbitmq/amqp091-go"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-
-	jwtutil "user_management_service/pkg/jwt"
 )
 
 type AuthRequest struct {
-	Type          string `json:"type"` // "register" ή "login"
-	Email         string `json:"email"`
-	Password      string `json:"password"`
-	Role          string `json:"role,omitempty"` // μόνο για register
-	ReplyTo       string `json:"reply_to"`       // όνομα callback queue
-	CorrelationID string `json:"correlation_id"` // για συσχέτιση
+	Type     string `json:"type"` // "register" ή "login"
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
-func ConsumeAuthQueue(ch *amqp091.Channel, db *gorm.DB) {
-	q, _ := ch.QueueDeclare("auth.request", true, false, false, false, nil)
-	msgs, _ := ch.Consume(q.Name, "", true, false, false, false, nil)
+type AuthResponse struct {
+	Status  string `json:"status"`            // "ok" ή "error"
+	Message string `json:"message,omitempty"` // λόγος σφάλματος
+	Token   string `json:"token,omitempty"`
+	Role    string `json:"role,omitempty"`
+	UserID  string `json:"userId,omitempty"`
+}
+
+func ConsumeAuthQueue(db *gorm.DB) {
+	msgs, err := Channel.Consume(
+		"auth.request", "", false, false, false, false, nil,
+	)
+	if err != nil {
+		log.Fatalf("Consume auth.request: %v", err)
+	}
 
 	go func() {
 		for d := range msgs {
 			var req AuthRequest
 			if err := json.Unmarshal(d.Body, &req); err != nil {
-				log.Println("❌ Invalid message:", err)
+				log.Println("Invalid auth request:", err)
+				d.Nack(false, false)
 				continue
 			}
 
 			switch req.Type {
 			case "register":
-				handleRegister(ch, db, req)
+				handleRegister(db, req)
 			case "login":
-				handleLogin(ch, db, req)
+				handleLogin(db, req)
 			default:
-				log.Println("❌ Unknown request type:", req.Type)
+				log.Println("Unknown auth type:", req.Type)
 			}
+			d.Ack(false)
 		}
 	}()
 }
 
-func handleRegister(ch *amqp091.Channel, db *gorm.DB, req AuthRequest) {
+func handleRegister(db *gorm.DB, req AuthRequest) {
 	var existing model.User
 	if err := db.Where("email = ?", req.Email).First(&existing).Error; err == nil {
-		SendResponse(ch, req.ReplyTo, req.CorrelationID, AuthResponse{
+		PublishEvent("auth.register.failure", AuthResponse{
 			Status:  "error",
 			Message: "Email already registered",
 		})
@@ -58,56 +68,53 @@ func handleRegister(ch *amqp091.Channel, db *gorm.DB, req AuthRequest) {
 
 	hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	user := model.User{
-		ID:           uuid.New().String(),
+		ID:           uuid.NewString(),
 		Email:        req.Email,
 		PasswordHash: string(hash),
-		Role:         req.Role,
+		Role:         "student",
 	}
-
 	if err := db.Create(&user).Error; err != nil {
-		SendResponse(ch, req.ReplyTo, req.CorrelationID, AuthResponse{
+		PublishEvent("auth.register.failure", AuthResponse{
 			Status:  "error",
 			Message: "Failed to create user",
 		})
 		return
 	}
 
-	SendResponse(ch, req.ReplyTo, req.CorrelationID, AuthResponse{
-		Status:  "ok",
-		Message: "User created successfully",
+	PublishEvent("auth.register.success", AuthResponse{
+		Status: "ok",
+		UserID: user.ID,
 	})
 }
 
-func handleLogin(ch *amqp091.Channel, db *gorm.DB, req AuthRequest) {
+func handleLogin(db *gorm.DB, req AuthRequest) {
 	var user model.User
 	if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		SendResponse(ch, req.ReplyTo, req.CorrelationID, AuthResponse{
+		PublishEvent("auth.login.failure", AuthResponse{
 			Status:  "error",
-			Message: "Invalid credentials (email)",
+			Message: "Invalid credentials",
 		})
 		return
 	}
-
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		SendResponse(ch, req.ReplyTo, req.CorrelationID, AuthResponse{
+		PublishEvent("auth.login.failure", AuthResponse{
 			Status:  "error",
-			Message: "Invalid credentials (password)",
+			Message: "Invalid credentials",
 		})
 		return
 	}
-
-	token, err := jwtutil.GenerateToken(user.ID, user.Email, user.Role)
+	token, err := jwt.GenerateToken(user.ID, user.Email, user.Role)
 	if err != nil {
-		SendResponse(ch, req.ReplyTo, req.CorrelationID, AuthResponse{
+		PublishEvent("auth.login.failure", AuthResponse{
 			Status:  "error",
-			Message: "Failed to generate token",
+			Message: "Token generation failed",
 		})
 		return
 	}
-
-	SendResponse(ch, req.ReplyTo, req.CorrelationID, AuthResponse{
+	PublishEvent("auth.login.success", AuthResponse{
 		Status: "ok",
 		Token:  token,
 		Role:   user.Role,
+		UserID: user.ID,
 	})
 }
