@@ -5,12 +5,18 @@
   <main class="container" style="max-width:380px">
     <%- include('partials/header') %>
     <fieldset><legend>Welcome to clearSKY</legend>
-      <form action="/login" method="post" autocomplete="username">
-        <div class="form-group"><label>user name</label><input name="username" required/></div>
-        <div class="form-group"><label>password</label><input name="password" type="password" required/></div>
+      <form action="/login" method="post">
+        <div class="form-group">
+          <label>user name</label><input name="username" required/>
+        </div>
+        <div class="form-group">
+          <label>password</label><input name="password" type="password" required/>
+        </div>
         <button class="button" type="submit">Login</button>
         <button class="button button--secondary" type="button">Login with Google</button>
-        <% if(error){%><p style="color:#c00;margin-top:1rem;"><%=error%></p><% } %>
+        <% if(error){%>
+          <p style="color:#c00;margin-top:1rem"><%=error%></p>
+        <% } %>
       </form>
     </fieldset>
     <%- include('partials/messageBox') %>
