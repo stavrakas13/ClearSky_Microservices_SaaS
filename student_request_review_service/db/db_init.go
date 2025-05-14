@@ -13,9 +13,9 @@ func InitDB() {
 
 	// CONNECT TO REVIEWS DB
 	// URL for docker connection
-	reviewsdbURL := "postgres://postgres:root@db:5432/reviewsdb?sslmode=disable"
+	//reviewsdbURL := "postgres://postgres:root@db:5432/reviewsdb?sslmode=disable"
 	// URL for local connection
-	// reviewsdbURL := "postgres://postgres:root@localhost:5432/reviews?sslmode=disable"
+	reviewsdbURL := "postgres://postgres:root@localhost:5432/reviews?sslmode=disable"
 
 	var err error
 	DB, err = sql.Open("postgres", reviewsdbURL)
