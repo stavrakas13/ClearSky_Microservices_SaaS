@@ -1,62 +1,65 @@
-// handler.go
 package handlers
 
 import (
 	"encoding/json"
 	"log"
-	"registration_service/dbService"
+
+	"credits_service/dbService"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// UserRequest mirrors the JSON that comes over the wire
-type UserRequest struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Director string `json:"director"`
+type SpendReq struct {
+	Name   string `json:"name"`
+	Amount int    `json:"amount"` // Capitalized & correct type
+	// code int `json:"code"`
 }
 
-// Response is sent back to the orchestrator
 type Response struct {
 	Status  string `json:"status"`  // "ok", "conflict", "error"
 	Message string `json:"message"` // details for humans
-	// code    int    `json:"code"`
+	Err     error  `json:"err"`
 }
 
-func HandleRegister(d amqp.Delivery, ch *amqp.Channel) {
-	var req UserRequest
+func Spending(d amqp.Delivery, ch *amqp.Channel) {
+	var req SpendReq
 	var res Response
 
-	// Acknowledge the message no matter what (multiple = false)
 	defer d.Ack(false)
 
 	// 1. Parse JSON ---------------------------------------------------------
 	if err := json.Unmarshal(d.Body, &req); err != nil {
 		res.Status = "error"
 		res.Message = "Invalid JSON"
+		res.Err = nil
 		publishReply(ch, d, res)
 		return
 	}
 
-	// 2. Business logic -----------------------------------------------------
-	code, err := dbService.AddInstitution(req.Name, req.Email, req.Director)
+	IsComplete, err := dbService.Diminish(req.Name, req.Amount)
+
 	if err != nil {
-		if code == 2 {
-			res.Status = "conflict"
-			res.Message = "Institution already registered"
-		} else {
-			res.Status = "error"
-			res.Message = "Database error"
-		}
+		res.Status = "error"
+		res.Message = "Error in internal process"
+		res.Err = err
 		publishReply(ch, d, res)
 		return
 	}
 
-	// 3. Success ------------------------------------------------------------
-	res.Status = "ok"
-	res.Message = "Institution registered successfully"
-	publishReply(ch, d, res)
-	return
+	if IsComplete {
+		res.Status = "OK"
+		res.Message = "Valid"
+		res.Err = nil
+		publishReply(ch, d, res)
+		return
+	} else {
+		res.Status = "error"
+		res.Message = "Not enough credits"
+		res.Err = nil
+		publishReply(ch, d, res)
+		return
+	}
+
 }
 
 func publishReply(ch *amqp.Channel, d amqp.Delivery, res Response) {

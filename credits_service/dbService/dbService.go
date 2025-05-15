@@ -107,3 +107,24 @@ func BuyCredits(inst_name string, credits int) (bool, error) {
 	return true, nil
 
 }
+
+func AvailableCredits(instName string) (int, error) {
+	ctx := context.Background()
+
+	const qry = `
+        SELECT credits
+        FROM credits_inst
+        WHERE name = $1
+    `
+	var current int
+	err := Pool.QueryRow(ctx, qry, instName).Scan(&current)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, fmt.Errorf("institution %q not found", instName)
+		}
+		log.Printf("Failed to query available credits for %q: %v", instName, err)
+		return 0, err
+	}
+
+	return current, nil
+}
