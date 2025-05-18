@@ -15,6 +15,8 @@ func GetReviewStatus(router *gin.Engine) {
 }
 */
 
+// Routing with Rabbit mq -> takes routing key and calls different controller.
+
 import (
 	"encoding/json"
 	"fmt"
@@ -22,24 +24,28 @@ import (
 )
 
 type Message struct {
-	Action string                 `json:"action"`
 	Params map[string]string      `json:"params"`
 	Body   map[string]interface{} `json:"body"`
 }
 
-func Routing(messageBody []byte) (string, error) {
+func Routing(routingKey string, messageBody []byte) (string, error) {
 	var msg Message
 	err := json.Unmarshal(messageBody, &msg)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse message: %w", err)
 	}
 
-	switch msg.Action {
-	case "PostNewReviewRequest":
+	switch routingKey {
+	case "student.postNewRequest":
 		return controllers.PostNewReviewRequest(msg.Params, msg.Body)
-	case "GetReviewStatus":
+
+	case "student.getRequestStatus":
 		return controllers.GetReviewStatus(msg.Params)
+
+	case "student.updateInstructorResponse":
+		return controllers.UpdateInstructorResponse(msg.Params, msg.Body)
+
 	default:
-		return "", fmt.Errorf("unknown action: %s", msg.Action)
+		return "", fmt.Errorf("unknown routing key: %s", routingKey)
 	}
 }
