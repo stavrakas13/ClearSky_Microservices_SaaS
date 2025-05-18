@@ -5,32 +5,42 @@ import (
 	"fmt"
 	"instructor_review_reply_service/db"
 	"instructor_review_reply_service/mq"
+	"time"
 
 	_ "github.com/lib/pq"
 )
 
 func main() {
 
-	mq.InitRabbitMQ()
+	for i := 0; i < 15; i++ {
+		err := mq.InitRabbitMQ()
+		if err == nil {
+			break
+		}
+		fmt.Printf("Waiting for RabbitMQ... (%d/15)\n", i+1)
+		time.Sleep(3 * time.Second)
+		if i == 14 {
+			panic("Could not connect to RabbitMQ after 15 tries")
+		}
+	}
 	defer mq.Mqconn.Close()
 	defer mq.Mqch.Close()
 
-	// Start consuming messages from orchestrator
-	mq.StartConsumer()
-
-	db.InitDB()
+	for i := 0; i < 5; i++ {
+		err := db.InitDB()
+		if err == nil {
+			break
+		}
+		fmt.Printf("Waiting for DB... (%d/5)\n", i+1)
+		time.Sleep(3 * time.Second)
+		if i == 4 {
+			panic("Could not connect to DB after 5 tries")
+		}
+	}
 	defer db.CloseDB()
 
-	/*
-		router := gin.Default()
+	mq.StartConsumer()
 
-		routes.PostReply(router)
-		routes.GetReviewReqeustList(router)
-		routes.GetRequestInfo(router)
-
-		router.Run(":8088")
-	*/
-	fmt.Println("Service started and waiting for RabbitMQ messages...")
+	fmt.Println("Instructor Service started and waiting for RabbitMQ messages...")
 	select {}
-
 }

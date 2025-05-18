@@ -2,14 +2,14 @@ package db
 
 import (
 	"database/sql"
-	"log"
+	"fmt"
 
 	_ "github.com/lib/pq"
 )
 
 var DB *sql.DB
 
-func InitDB() {
+func InitDB() error {
 
 	// CONNECT TO REVIEWS DB
 	// URL for docker connection
@@ -20,10 +20,16 @@ func InitDB() {
 	var err error
 	DB, err = sql.Open("postgres", reviewsdbURL)
 	if err != nil {
-		log.Fatal("Failed to connect to DB:", err)
+		fmt.Println("DB open error:", err)
+		return err
 	}
-
-	log.Println("Connected to reviewsdb.")
+	err = DB.Ping()
+	if err != nil {
+		fmt.Println("DB ping error:", err)
+		return err
+	}
+	fmt.Println("DB connection established.")
+	return nil
 }
 
 func CloseDB() {
