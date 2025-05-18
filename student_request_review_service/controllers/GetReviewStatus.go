@@ -41,22 +41,45 @@ import (
 
 func GetReviewStatus(params map[string]string) (string, error) {
 
-	// input from orchestrator in json form
-	//{
-	//	"review_id": "101",
-	//}
+	// input send by orchestrator in json form like:
+	// {
+	//   "params": {
+	//     "exam_period": "spring 2025",
+	//     "course_id": "101"
+	//     "user_id": 42,
+	//   }
+	// }
 
-	reviewIDStr, ok := params["review_id"]
+	// Extract data
+	userIDStr, ok := params["user_id"]
 	if !ok {
-		return "", fmt.Errorf("missing review_id")
+		return "", fmt.Errorf("missing user_id")
 	}
-	reviewID, err := strconv.Atoi(reviewIDStr)
+	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
-		return "", fmt.Errorf("invalid review ID")
+		return "", fmt.Errorf("invalid user_id format")
 	}
-	// insert into db
-	query := `SELECT student_id, course_id, student_message, status, instructor_reply_message, review_created_at, reviewed_at FROM reviews WHERE review_id = $1`
-	row := db.DB.QueryRow(query, reviewID)
+
+	courseIDStr, ok := params["course_id"]
+	if !ok {
+		return "", fmt.Errorf("missing course_id")
+	}
+	courseID, err := strconv.Atoi(courseIDStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid course_id format")
+	}
+
+	examPeriod, ok := params["exam_period"]
+	if !ok {
+		return "", fmt.Errorf("missing exam_period")
+	}
+	// search db using student_id & course_id & exam_period.
+	query := `
+		SELECT student_id, course_id, exam_period, student_message, status, instructor_reply_message, review_created_at, reviewed_at 
+		FROM reviews 
+		WHERE student_id = $1 AND course_id = $2 AND exam_period = $3`
+
+	row := db.DB.QueryRow(query, userID, courseID, examPeriod)
 
 	var review ReviewStruct
 	err = row.Scan(
