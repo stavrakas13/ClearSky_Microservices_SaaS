@@ -3,6 +3,7 @@ version: "3.8"
 services:
   db:
     image: postgres:15
+    restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: root
@@ -14,15 +15,17 @@ services:
       - ./db/reviewsdb.sql:/docker-entrypoint-initdb.d/reviewsdb.sql
   rabbitmq:
     image: rabbitmq:3-management
+    restart: always
     ports:
-      - "5672:5672"   # RabbitMQ (AMQP) port
-      - "15672:15672" # RabbitMQ Management UI
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
 
   app:
     build: .
+    restart: on-failure
     ports:
       - "8087:8087"
     depends_on:

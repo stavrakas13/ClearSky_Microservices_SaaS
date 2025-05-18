@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS reviews (
   student_message TEXT NOT NULL,
   status VARCHAR(15) DEFAULT 'pending' CHECK (status IN ('pending', 'reviewed')),
   instructor_reply_message TEXT,
+  instructor_action VARCHAR(25) DEFAULT NULL CHECK (instructor_action IN ('Total Accept', 'Will be considered', 'Denied')),
   review_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   reviewed_at TIMESTAMP
 );
