@@ -1,17 +1,11 @@
 package controllers
 
-import (
-	"instructor_review_reply_service/db"
-	"log"
-	"net/http"
+func GetReviewReqeustList(params map[string]string, body map[string]interface{}) (string, error) {
+	return "response", nil
 
-	"github.com/gin-gonic/gin"
-)
+}
 
-// NEED FOR INSTRUCTOR DB ?????
-// TO PULL ALL REQUESTS FROM ALL COURCES -> loggedInInstructor.userID
-
-func GetReviewReqeustList(c *gin.Context) {
+/* func GetReviewReqeustList(c *gin.Context) {
 
 	query := `SELECT student_id, course_id, review_created_at FROM reviews WHERE status = 'pending'`
 	rows, err := db.DB.Query(query)
@@ -38,3 +32,4 @@ func GetReviewReqeustList(c *gin.Context) {
 		c.JSON(http.StatusOK, requestlist)
 	}
 }
+*/

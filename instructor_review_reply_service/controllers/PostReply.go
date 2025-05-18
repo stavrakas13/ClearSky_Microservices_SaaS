@@ -1,15 +1,11 @@
 package controllers
 
-import (
-	"instructor_review_reply_service/db"
-	"log"
-	"net/http"
-	"strconv"
+func PostReply(params map[string]string, body map[string]interface{}) (string, error) {
+	return "response", nil
 
-	"github.com/gin-gonic/gin"
-)
+}
 
-func PostReply(c *gin.Context) {
+/* func PostReply(c *gin.Context) {
 	reviewIDStr := c.Param("review_id")
 	reviewID, err := strconv.Atoi(reviewIDStr)
 	if err != nil {
@@ -24,7 +20,7 @@ func PostReply(c *gin.Context) {
 		return
 	}
 	query := `
-		UPDATE reviews 
+		UPDATE reviews
 		SET instructor_reply_message = $1,
 			instructor_action = $2,
 			status = 'reviewed',
@@ -44,3 +40,4 @@ func PostReply(c *gin.Context) {
 		"instructor_action":        reqBody.InstructorAction,
 	})
 }
+*/

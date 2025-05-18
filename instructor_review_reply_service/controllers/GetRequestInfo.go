@@ -1,15 +1,10 @@
 package controllers
 
-import (
-	"instructor_review_reply_service/db"
-	"log"
-	"net/http"
-	"strconv"
+func GetRequestInfo(params map[string]string, body map[string]interface{}) (string, error) {
+	return "response", nil
+}
 
-	"github.com/gin-gonic/gin"
-)
-
-func GetRequestInfo(c *gin.Context) {
+/* func GetRequestInfo(c *gin.Context) {
 	reviewIDStr := c.Param("review_id")
 	reviewID, err := strconv.Atoi(reviewIDStr)
 	if err != nil {
@@ -17,10 +12,10 @@ func GetRequestInfo(c *gin.Context) {
 		return
 	}
 	query := `
-			SELECT 
-				student_id, course_id, student_message, status, instructor_reply_message, 
-				instructor_action, review_created_at, reviewed_at 
-			FROM reviews 
+			SELECT
+				student_id, course_id, student_message, status, instructor_reply_message,
+				instructor_action, review_created_at, reviewed_at
+			FROM reviews
 			WHERE review_id = $1
 		`
 
@@ -47,4 +42,4 @@ func GetRequestInfo(c *gin.Context) {
 
 	c.JSON(http.StatusOK, review)
 
-}
+} */
