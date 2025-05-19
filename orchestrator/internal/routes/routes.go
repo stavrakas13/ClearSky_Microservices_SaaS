@@ -15,5 +15,13 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		handlers.HandleCreditsPurchased(c, ch)
 	})
 
+	r.GET("/mycredits", func(c *gin.Context) {
+		handlers.HandleCreditsAvail(c, ch)
+	})
+
+	r.PATCH("/spending", func(c *gin.Context) {
+		handlers.HandleCreditsSpent(c, ch)
+	})
+
 	return r
 }
