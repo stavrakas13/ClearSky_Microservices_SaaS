@@ -23,5 +23,19 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		handlers.HandleCreditsSpent(c, ch)
 	})
 
+	// Student and Instructor API calls.
+
+	r.PATCH("/student/reviewRequest", func(c *gin.Context) {
+		handlers.HandlePostNewRequest(c, ch)
+	})
+	r.PATCH("/student/status", func(c *gin.Context) {
+		handlers.HandleGetRequestStatus(c, ch)
+	})
+	r.PATCH("/instructor/review-list", func(c *gin.Context) {
+		handlers.HandleGetRequestList(c, ch)
+	})
+	r.PATCH("/instructor/reply", func(c *gin.Context) {
+		handlers.HandlePostResponse(c, ch)
+	})
 	return r
 }
