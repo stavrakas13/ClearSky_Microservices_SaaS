@@ -2,8 +2,10 @@ package main
 
 import (
 	"log"
+
 	"orchestrator/internal/config"
 	"orchestrator/internal/rabbitmq"
+	"orchestrator/internal/routes"
 )
 
 func main() {
@@ -26,5 +28,14 @@ func main() {
 	}
 
 	log.Printf("Orchestrator listening on exchange '%s', queue '%s'...", config.Cfg.Exchange.Name, config.Cfg.Queue.Name)
+
+	router := routes.SetupRouter(ch)
+
+	// 6. Start Gin (blocks here)
+	log.Println("HTTP server running on :8080")
+	if err := router.Run(":8080"); err != nil {
+		log.Fatalf("Gin failed: %v", err)
+	}
+
 	select {} // block forever
 }
