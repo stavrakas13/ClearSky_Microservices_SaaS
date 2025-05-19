@@ -1,5 +1,5 @@
 rabbitmq:
-  url: "amqp://admin:admin@rabbitmq:5672/"
+  url: "amqp://guest:guest@localhost:5672/" #"amqp://admin:admin@rabbitmq:5672/"
 exchange:
   name: "clearsky.events"
   type: "topic"
