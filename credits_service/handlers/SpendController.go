@@ -40,7 +40,7 @@ func Spending(d amqp.Delivery, ch *amqp.Channel) {
 
 	if err != nil {
 		res.Status = "error"
-		res.Message = "Error in internal process"
+		res.Message = "Error in internal process or not enough credits"
 		res.Err = err
 		publishReply(ch, d, res)
 		return
@@ -48,18 +48,11 @@ func Spending(d amqp.Delivery, ch *amqp.Channel) {
 
 	if IsComplete {
 		res.Status = "OK"
-		res.Message = "Valid"
-		res.Err = nil
-		publishReply(ch, d, res)
-		return
-	} else {
-		res.Status = "error"
-		res.Message = "Not enough credits"
+		res.Message = "Valid spent of your credits"
 		res.Err = nil
 		publishReply(ch, d, res)
 		return
 	}
-
 }
 
 func publishReply(ch *amqp.Channel, d amqp.Delivery, res Response) {

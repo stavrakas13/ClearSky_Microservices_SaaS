@@ -22,7 +22,7 @@ type AvailableResp struct {
 
 func AvailableHandler(d amqp.Delivery, ch *amqp.Channel) {
 	var req AvailableReq
-
+	log.Printf("We are inside the microservices for return available credits")
 	if err := json.Unmarshal(d.Body, &req); err != nil {
 		log.Printf("Invalid JSON in AvailableHandler: %v", err)
 		sendAvailableReplyAndNack(ch, d, AvailableResp{
@@ -55,6 +55,8 @@ func AvailableHandler(d amqp.Delivery, ch *amqp.Channel) {
 		d.Nack(false, true)
 		return
 	}
+	log.Printf(res.Status)
+	log.Printf("Available credits %d", res.Credits)
 	d.Ack(false)
 }
 
