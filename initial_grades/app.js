@@ -1,143 +1,142 @@
+/**
+ * grades_consumer.js
+ *
+ * Listens on topic "postgrades.init", ingests an .xlsx that may arrive as
+ *  • ✉️  raw binary  (contentType = application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+ *  • ✉️  base-64 string, contentType omitted  (your CLI test)
+ *  • ✉️  base-64 string, contentType = text/plain
+ * Inserts the parsed rows into MongoDB and (optionally) replies RPC-style.
+ */
 require('dotenv').config();
-const amqp = require('amqplib');
+const amqp     = require('amqplib');
 const mongoose = require('mongoose');
-const XLSX = require('xlsx');
+const XLSX     = require('xlsx');
 
-// Pull straight from your .env
+// ─────────────────────── ENV ───────────────────────
 const {
   MONGO_URI,
   RABBITMQ_URI,
-  RABBITMQ_EXCHANGE,
-  RABBITMQ_ROUTING_KEY
+  RABBITMQ_EXCHANGE,   // "clearSky.event"
+  RABBITMQ_ROUTING_KEY // "postgrades.init"
 } = process.env;
 
-// (Optional) sanity‐check:
 if (!MONGO_URI || !RABBITMQ_URI || !RABBITMQ_EXCHANGE || !RABBITMQ_ROUTING_KEY) {
-  console.error('❌ Missing one of MONGO_URI, RABBITMQ_URI, RABBITMQ_EXCHANGE or RABBITMQ_ROUTING_KEY in .env');
+  console.error('❌  Missing .env variables');
   process.exit(1);
 }
 
-// 1. Define schema with Q1–Q10
+// ────────────────── Mongoose model ─────────────────
 const GradeSchema = new mongoose.Schema({
-  AM:               { type: String,  required: true },
-  name:             { type: String,  required: true },
-  email:            { type: String,  required: true },
-  declarationPeriod:{ type: String,  required: true },
-  classTitle:       { type: String,  required: true },
-  gradingScale:     { type: String,  required: true },
-  grade:            { type: Number,  required: true },
-  Q1: { type: Number, min: 0, max:1000, default: null },
-  Q2: { type: Number, min: 0, max:1000, default: null },
-  Q3: { type: Number, min: 0, max:1000, default: null },
-  Q4: { type: Number, min: 0, max:1000, default: null },
-  Q5: { type: Number, min: 0, max:1000, default: null },
-  Q6: { type: Number, min: 0, max:1000, default: null },
-  Q7: { type: Number, min: 0, max:1000, default: null },
-  Q8: { type: Number, min: 0, max:1000, default: null },
-  Q9: { type: Number, min: 0, max:1000, default: null },
-  Q10:{ type: Number, min: 0, max:1000, default: null }
+  AM:    { type: String, required: true },
+  name:  { type: String, required: true },
+  email: { type: String, required: true },
+  declarationPeriod:{ type: String, required: true },
+  classTitle:       { type: String, required: true },
+  gradingScale:     { type: String, required: true },
+  grade:            { type: Number, required: true },
+  Q1:  { type: Number, min:0, max:1000, default:null },
+  Q2:  { type: Number, min:0, max:1000, default:null },
+  Q3:  { type: Number, min:0, max:1000, default:null },
+  Q4:  { type: Number, min:0, max:1000, default:null },
+  Q5:  { type: Number, min:0, max:1000, default:null },
+  Q6:  { type: Number, min:0, max:1000, default:null },
+  Q7:  { type: Number, min:0, max:1000, default:null },
+  Q8:  { type: Number, min:0, max:1000, default:null },
+  Q9:  { type: Number, min:0, max:1000, default:null },
+  Q10: { type: Number, min:0, max:1000, default:null }
 });
 const Grade = mongoose.model('Grade', GradeSchema);
 
-async function connectMongo() {
-  await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-  console.log('✅ Connected to MongoDB');
-}
+// ──────────────────── Main worker ──────────────────
+(async () => {
+  await mongoose.connect(MONGO_URI);
+  console.log('✅  MongoDB connected');
 
-async function startConsumer() {
-  const conn = await amqp.connect(RABBITMQ_URI);
+  const conn    = await amqp.connect(RABBITMQ_URI);
   const channel = await conn.createChannel();
+
   await channel.assertExchange(RABBITMQ_EXCHANGE, 'topic', { durable: true });
   const q = await channel.assertQueue('', { exclusive: true });
   await channel.bindQueue(q.queue, RABBITMQ_EXCHANGE, RABBITMQ_ROUTING_KEY);
-  console.log(`🚀 Waiting for messages on ${RABBITMQ_EXCHANGE} with routing key ${RABBITMQ_ROUTING_KEY}`);
+  channel.prefetch(10);
+
+  console.log(`🚀  Waiting on ${RABBITMQ_EXCHANGE} → "${RABBITMQ_ROUTING_KEY}"`);
 
   channel.consume(q.queue, async (msg) => {
     if (!msg) return;
+
+    // ---------- 1) Figure out what we actually received ----------
+    const ct = (msg.properties.contentType || '').toLowerCase().trim();
+    let buffer;
+
+    if (ct === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        ct === 'application/octet-stream') {
+      buffer = msg.content;                          // raw XLSX
+    } else {
+      // either text/plain OR header completely missing → treat as base-64 string
+      buffer = Buffer.from(msg.content.toString(), 'base64');
+    }
+
+    // ---------- helper: optional RPC reply ----------
+    const reply = (payload) => {
+      const { replyTo, correlationId } = msg.properties;
+      if (!replyTo) return;                          // not an RPC call
+      channel.publish(
+        '', replyTo,
+        Buffer.from(JSON.stringify(payload)),
+        { contentType: 'application/json', correlationId }
+      );
+    };
+
     try {
-      const ct = msg.properties.contentType;
+      // ---------- 2) Parse workbook ----------
+      const wb   = XLSX.read(buffer, { type: 'buffer' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {
+        header: 1, raw: false
+      });
+      if (rows.length < 4) throw new Error('Template too short');
 
-      if (ct === 'text/plain') {
-        // Plain‐text path
-        const text = msg.content.toString('utf8');
-        console.log('📥 Received plain text:', text);
-        channel.ack(msg);
-        return;
-      }
-
-      // Excel/Base64 path
-      console.log('📥 Received Excel/Base64 payload');
-      const base64  = msg.content.toString();
-      const buffer  = Buffer.from(base64, 'base64');
-      const workbook= XLSX.read(buffer, { type: 'buffer' });
-      const sheet   = workbook.Sheets[workbook.SheetNames[0]];
-      const rows    = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
-
-      // Row 2 (index 1) has weights columns I–R → indexes 8–17
-      const weightRow = rows[1] || [];
-
-      // Row 3 (index 2) is the header names
-      const headerRow = rows[2] || [];
-
-      // Data rows start at row 4 → index 3+
+      const weightRow = rows[1];
+      const headerRow = rows[2];
       const dataRows  = rows.slice(3);
 
-      // Fixed-field mapping
-      const mapping = {
+      const map = {
         'Αριθμός Μητρώου':   'AM',
         'Ονοματεπώνυμο':     'name',
         'Ακαδημαϊκό E-mail': 'email',
         'Περίοδος δήλωσης':  'declarationPeriod',
         'Τμήμα Τάξης':       'classTitle',
         'Κλίμακα βαθμολόγησης': 'gradingScale',
-        'Βαθμολογία':         'grade'
+        'Βαθμολογία':        'grade'
       };
 
       const docs = dataRows.map(row => {
-        const doc = {};
-
-        // 1) Map fixed fields
-        headerRow.forEach((col, i) => {
-          const key = mapping[col && col.trim()];
-          if (key && row[i] != null && row[i] !== '') {
-            // cast grade to Number
-            doc[key] = (key === 'grade') ? parseFloat(row[i]) : row[i].toString().trim();
-          }
+        const d = {};
+        headerRow.forEach((title, i) => {
+          const k = map[title?.trim()];
+          if (!k) return;
+          if (row[i] != null && row[i] !== '')
+            d[k] = k === 'grade' ? parseFloat(row[i]) : row[i].toString().trim();
         });
-
-        // 2) Compute Q1–Q10 from cols I (8) → R (17)
         for (let q = 1; q <= 10; q++) {
-          const idx     = 8 + (q - 1);
-          const rawVal  = parseFloat(row[idx]);
-          const weight  = parseFloat(weightRow[idx]);
-          if (!isNaN(rawVal) && !isNaN(weight)) {
-            doc[`Q${q}`] = rawVal * weight;
-          } else {
-            doc[`Q${q}`] = null;
-          }
+          const idx = 8 + (q - 1);
+          const score  = parseFloat(row[idx]);
+          const weight = parseFloat(weightRow[idx]);
+          d[`Q${q}`] = (!isNaN(score) && !isNaN(weight)) ? score * weight : null;
         }
-
-        return doc;
+        return d;
       });
 
-      // 3) Bulk insert
-      const result = await Grade.insertMany(docs);
-      console.log(`✅ Inserted ${result.length} records into MongoDB`);
+      const res = await Grade.insertMany(docs, { ordered: false });
+      console.log(`✅  Inserted ${res.length} docs`);
+
+      reply({ status: 'ok', message: `Inserted ${res.length} records` });
       channel.ack(msg);
 
     } catch (err) {
-      console.error('❌ Error processing message', err);
-      channel.nack(msg, false, false);
+      console.error('❌', err.message);
+      reply({ status: 'error', message: 'Failed to process file', error: err.message });
+      channel.nack(msg, false, false); // discard
     }
   }, { noAck: false });
-}
-
-(async () => {
-  try {
-    await connectMongo();
-    await startConsumer();
-  } catch (err) {
-    console.error('❌ Failed to start service', err);
-    process.exit(1);
-  }
 })();
