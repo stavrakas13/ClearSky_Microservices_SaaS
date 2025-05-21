@@ -39,16 +39,16 @@ func Routing(routingKey string, messageBody []byte) (string, error) {
 
 	switch routingKey {
 	case "instructor.postResponse":
-		return controllers.PostReply(msg.Params, msg.Body)
+		return controllers.PostReply(msg.Body)
 
 	case "instructor.getRequestsList":
-		return controllers.GetReviewReqeustList(msg.Params, msg.Body)
+		return controllers.GetReviewReqeustList(msg.Body)
 
 	case "instructor.getRequestInfo":
-		return controllers.GetRequestInfo(msg.Params, msg.Body)
+		return controllers.GetRequestInfo(msg.Body)
 
 	case "instructor.insertStudentRequest":
-		return controllers.InsertStudentRequest(msg.Params, msg.Body)
+		return controllers.InsertStudentRequest(msg.Body)
 
 	default:
 		return "", fmt.Errorf("unknown routing key: %s", routingKey)

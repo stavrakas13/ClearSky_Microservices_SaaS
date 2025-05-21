@@ -4,27 +4,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"instructor_review_reply_service/db"
-	"strconv"
 )
 
-func GetReviewReqeustList(params map[string]string, body map[string]interface{}) (string, error) {
+func GetReviewReqeustList(body map[string]interface{}) (string, error) {
 	// input send by orchestrator in json form like:
 	// {
-	//   "params": {
+	//   "body": {
 	//     "course_id": "101"
-	//   },
-	//   "body": {}
+	//	 }
 	// }
 
 	// extract data from input.
-	courseIDStr, ok := params["course_id"]
+	courseID, ok := body["course_id"]
 	if !ok {
-		return "", fmt.Errorf("missing or invalid course_id")
-	}
-
-	courseID, err := strconv.Atoi(courseIDStr)
-	if err != nil {
-		return "", fmt.Errorf("invalid course_id format")
+		return "", fmt.Errorf("missing course_id")
 	}
 	query := `
 		SELECT student_id, course_id, review_created_at 
@@ -48,11 +41,19 @@ func GetReviewReqeustList(params map[string]string, body map[string]interface{})
 		requestlist = append(requestlist, summary)
 	}
 	if len(requestlist) == 0 {
-		return `{"message": "No pending review requests found."}`, nil
+		emptyResponse := map[string]interface{}{
+			"message": "No pending review requests found.",
+			"data":    []ReviewSummary{},
+		}
+		respBytes, _ := json.Marshal(emptyResponse)
+		return string(respBytes), nil
 	}
 
-	// Convert to JSON
-	respBytes, err := json.Marshal(requestlist)
+	successResponse := map[string]interface{}{
+		"message": "Pending review requests retrieved successfully.",
+		"data":    requestlist,
+	}
+	respBytes, err := json.Marshal(successResponse)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal response: %v", err)
 	}

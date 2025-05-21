@@ -4,44 +4,34 @@ import (
 	"encoding/json"
 	"fmt"
 	"instructor_review_reply_service/db"
-	"strconv"
 )
 
-func GetRequestInfo(params map[string]string, body map[string]interface{}) (string, error) {
+func GetRequestInfo(body map[string]interface{}) (string, error) {
 
 	// input send by orchestrator in json form like:
 	//{
-	//"params": {
+	//"body": {
 	//  "course_id": "101",
 	//  "exam_period": "spring 2025",
 	//  "user_id": "42"
-	//},
-	//"body": {}
 	//}
 
-	// Extract data
-	userIDStr, ok := params["user_id"]
-	if !ok {
-		return "", fmt.Errorf("missing user_id")
-	}
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil {
-		return "", fmt.Errorf("invalid user_id format")
-	}
-
-	courseIDStr, ok := params["course_id"]
+	// get data from json
+	courseID, ok := body["course_id"]
 	if !ok {
 		return "", fmt.Errorf("missing course_id")
 	}
-	courseID, err := strconv.Atoi(courseIDStr)
-	if err != nil {
-		return "", fmt.Errorf("invalid course_id format")
+
+	userID, ok := body["user_id"]
+	if !ok {
+		return "", fmt.Errorf("missing user_id")
 	}
 
-	examPeriod, ok := params["exam_period"]
+	examPeriod, ok := body["exam_period"]
 	if !ok {
 		return "", fmt.Errorf("missing exam_period")
 	}
+
 	// search db using student_id & course_id & exam_period.
 	query := `
 		SELECT student_id, course_id, exam_period, student_message, review_created_at 
@@ -51,7 +41,7 @@ func GetRequestInfo(params map[string]string, body map[string]interface{}) (stri
 	row := db.DB.QueryRow(query, userID, courseID, examPeriod)
 
 	var review ReviewStruct
-	err = row.Scan(
+	err := row.Scan(
 		&review.Student_id,
 		&review.Course_id,
 		&review.Exam_period,
@@ -59,13 +49,14 @@ func GetRequestInfo(params map[string]string, body map[string]interface{}) (stri
 		&review.Review_created_at,
 	)
 	if err != nil {
-		fmt.Println("Scan error:", err)
-		return "", fmt.Errorf("review not found")
+		emptyResponse := map[string]interface{}{
+			"message": "No review found for the given input.",
+		}
+		respBytes, _ := json.Marshal(emptyResponse)
+		return string(respBytes), nil
 	}
-
 	resBytes, _ := json.Marshal(review)
 	return string(resBytes), nil
-
 }
 
 /* func GetRequestInfo(c *gin.Context) {
