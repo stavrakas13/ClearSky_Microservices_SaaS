@@ -1,15 +1,18 @@
-# Use official Node.js 18 LTS
-FROM node:18-alpine
+# Dockerfile
+FROM node:20-alpine
 
-# Create app dir
+# 1. Create app directory
 WORKDIR /usr/src/app
 
-# Copy package manifests and install deps
-COPY package*.json ./
-RUN npm install --production
+# 2. Install dependencies
+COPY package.json package-lock.json ./
+RUN npm ci --production
 
-# Copy source
+# 3. Copy source
 COPY . .
 
-# Expose nothing (we're a consumer), but define default command
-CMD ["node", "app.js"]
+# 4. Expose nothing (consumer only), set default ENV
+ENV NODE_ENV=production
+
+# 5. Default command: run consumer
+CMD ["node", "grades_consumer.js"]
