@@ -128,3 +128,36 @@ func AvailableCredits(instName string) (int, error) {
 
 	return current, nil
 }
+
+func NewInstitution(instName string, initialCredits int) (bool, error) {
+	ctx := context.Background()
+
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		log.Printf("Failed to begin transaction: %v", err)
+		return false, err
+	}
+	defer tx.Rollback(ctx) // Ensures rollback on failure
+
+	const checkQuery = `SELECT 1 FROM credits_inst WHERE name = $1`
+	var exists int
+	err = tx.QueryRow(ctx, checkQuery, instName).Scan(&exists)
+	if err == nil {
+		log.Printf("Error checking institution existence: %v", err)
+		return false, fmt.Errorf("institution %q already exists", instName)
+	}
+
+	const insertQuery = `INSERT INTO credits_inst (name, credits) VALUES ($1, $2)`
+	_, err = tx.Exec(ctx, insertQuery, instName, initialCredits)
+	if err != nil {
+		log.Printf("Failed to insert new institution: %v", err)
+		return false, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("Failed to commit transaction: %v", err)
+		return false, err
+	}
+
+	return true, nil
+}

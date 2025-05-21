@@ -45,6 +45,7 @@ func main() {
 		"credits.spent",
 		"credits.purchased",
 		"credits.avail",
+		"add.new",
 	}
 
 	err = ch.ExchangeDeclare(
@@ -123,6 +124,8 @@ func worker(id int, msgs <-chan amqp.Delivery, ch *amqp.Channel) {
 			handlers.HandleBuy(d, ch)
 		case "credits.avail":
 			handlers.AvailableHandler(d, ch)
+		case "add.new":
+			handlers.AddInstitutionHandler(d, ch)
 		default:
 			log.Printf("Worker %d: unknown key %q", id, d.RoutingKey)
 			d.Nack(false, false)

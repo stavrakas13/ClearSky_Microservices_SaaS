@@ -26,6 +26,119 @@ type Response struct {
 	ErrorDetail string `json:"error,omitempty"` // optional error text
 }
 
+type AddInstitutionReq struct {
+	Name    string `json:"name" binding:"required"`
+	Credits int    `json:"credits" binding:"required"`
+}
+
+type AddInstitutionResp struct {
+	Status      string `json:"status"`          // "ok" or "error"
+	Message     string `json:"message"`         // human-readable
+	ErrorDetail string `json:"error,omitempty"` // optional error text
+}
+
+func HandleAddInstitution(c *gin.Context, ch *amqp.Channel) {
+	log.Println("Add Institution API called")
+
+	var req AddInstitutionReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, AddInstitutionResp{
+			Status:      "error",
+			ErrorDetail: err.Error(),
+		})
+		return
+	}
+
+	replyQ, err := ch.QueueDeclare(
+		"",    // name: empty → broker auto-generates
+		false, // durable
+		true,  // auto-delete
+		true,  // exclusive
+		false, // no-wait
+		nil,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, AddInstitutionResp{
+			Status:      "error",
+			ErrorDetail: "queue declare failed: " + err.Error(),
+		})
+		return
+	}
+
+	msgs, err := ch.Consume(
+		replyQ.Name,
+		"",    // consumer tag
+		true,  // auto-ack
+		true,  // exclusive
+		false, // no-local
+		false, // no-wait
+		nil,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, AddInstitutionResp{
+			Status:      "error",
+			ErrorDetail: "consume start failed: " + err.Error(),
+		})
+		return
+	}
+
+	corrID := uuid.New().String()
+	reqBody, _ := json.Marshal(req)
+
+	if err := ch.Publish(
+		"clearSky.events", // exchange
+		"add.new",         // routing key
+		false, false,
+		amqp.Publishing{
+			ContentType:   "application/json",
+			CorrelationId: corrID,
+			ReplyTo:       replyQ.Name,
+			Body:          reqBody,
+		},
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, AddInstitutionResp{
+			Status:      "error",
+			ErrorDetail: "publish failed: " + err.Error(),
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			c.JSON(http.StatusGatewayTimeout, AddInstitutionResp{
+				Status:      "error",
+				ErrorDetail: "timeout waiting for service",
+			})
+			return
+
+		case d := <-msgs:
+			if d.CorrelationId != corrID {
+				continue
+			}
+
+			var resp AddInstitutionResp
+			if err := json.Unmarshal(d.Body, &resp); err != nil {
+				c.JSON(http.StatusInternalServerError, AddInstitutionResp{
+					Status:      "error",
+					ErrorDetail: "unmarshal reply failed: " + err.Error(),
+				})
+				return
+			}
+
+			statusCode := http.StatusOK
+			if resp.Status != "ok" {
+				statusCode = http.StatusBadRequest
+			}
+			c.JSON(statusCode, resp)
+			return
+		}
+	}
+}
+
 func HandleInstitutionRegistered(c *gin.Context, ch *amqp.Channel) {
 	log.Printf("We are calling registration service in a little bit...")
 	var req UserRequest
@@ -126,6 +239,8 @@ func HandleInstitutionRegistered(c *gin.Context, ch *amqp.Channel) {
 				statusCode = http.StatusBadRequest
 			}
 			c.JSON(statusCode, resp)
+
+			HandleAddInstitution(c, ch)
 			return
 		}
 	}
