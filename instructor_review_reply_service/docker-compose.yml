@@ -7,12 +7,12 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: root
-      POSTGRES_DB: reviewsdb
+      POSTGRES_DB: reviewsdbinst
     ports:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./db/reviewsdb.sql:/docker-entrypoint-initdb.d/reviewsdb.sql
+      - ./db/reviewsdb.sql:/docker-entrypoint-initdb.d/reviewsdbinst.sql
   rabbitmq:
     image: rabbitmq:3-management
     restart: always
@@ -32,7 +32,7 @@ services:
       - db
       - rabbitmq
     environment:
-      DATABASE_URL: postgres://postgres:root@db:5432/reviewsdb?sslmode=disable
+      DATABASE_URL: postgres://postgres:root@db:5432/reviewsdbinst?sslmode=disable
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
 
 
