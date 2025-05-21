@@ -3,45 +3,35 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"student_request_review_service/db"
 )
 
-func GetReviewStatus(params map[string]string) (string, error) {
+func GetReviewStatus(body map[string]interface{}) (string, error) {
 
 	// input send by orchestrator in json form like:
 	//{
-	//"params": {
+	//"body": {
 	//  "course_id": "101",
 	//  "exam_period": "spring 2025",
 	//  "user_id": "42"
-	//},
-	//"body": {}
 	//}
 
-	// Extract data
-	userIDStr, ok := params["user_id"]
-	if !ok {
-		return "", fmt.Errorf("missing user_id")
-	}
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil {
-		return "", fmt.Errorf("invalid user_id format")
-	}
-
-	courseIDStr, ok := params["course_id"]
+	// get data from json
+	courseID, ok := body["course_id"]
 	if !ok {
 		return "", fmt.Errorf("missing course_id")
 	}
-	courseID, err := strconv.Atoi(courseIDStr)
-	if err != nil {
-		return "", fmt.Errorf("invalid course_id format")
+
+	userID, ok := body["user_id"]
+	if !ok {
+		return "", fmt.Errorf("missing user_id")
 	}
 
-	examPeriod, ok := params["exam_period"]
+	examPeriod, ok := body["exam_period"]
 	if !ok {
 		return "", fmt.Errorf("missing exam_period")
 	}
+
 	// search db using student_id & course_id & exam_period.
 	query := `
 		SELECT student_id, course_id, exam_period, student_message, status, instructor_reply_message, instructor_action, review_created_at, reviewed_at 
@@ -51,7 +41,7 @@ func GetReviewStatus(params map[string]string) (string, error) {
 	row := db.DB.QueryRow(query, userID, courseID, examPeriod)
 
 	var review ReviewStruct
-	err = row.Scan(
+	err := row.Scan(
 		&review.Student_id,
 		&review.Course_id,
 		&review.Exam_period,
@@ -63,8 +53,11 @@ func GetReviewStatus(params map[string]string) (string, error) {
 		&review.Reviewed_at,
 	)
 	if err != nil {
-		fmt.Println("Scan error:", err)
-		return "", fmt.Errorf("review not found")
+		emptyResponse := map[string]interface{}{
+			"message": "No review found for the given input.",
+		}
+		respBytes, _ := json.Marshal(emptyResponse)
+		return string(respBytes), nil
 	}
 
 	resBytes, _ := json.Marshal(review)

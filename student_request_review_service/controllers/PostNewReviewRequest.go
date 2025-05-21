@@ -3,35 +3,27 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"student_request_review_service/db"
 )
 
-func PostNewReviewRequest(params map[string]string, body map[string]interface{}) (string, error) {
+func PostNewReviewRequest(body map[string]interface{}) (string, error) {
 	// input send by orchestrator in json form like:
 	// {
-	//   "params": {
-	//     "exam_period": "spring 2025",
-	//     "course_id": "101"
-	//   },
 	//   "body": {
+	//     "exam_period": "spring 2025",
+	//     "course_id": "101",
 	//     "user_id": 42,
 	//     "student_message": "Please recheck my assignment."
 	//   }
 	// }
 
 	// extract data from input.
-	courseIDStr, ok := params["course_id"]
+	courseID, ok := body["course_id"]
 	if !ok {
 		return "", fmt.Errorf("missing or invalid course_id")
 	}
 
-	courseID, err := strconv.Atoi(courseIDStr)
-	if err != nil {
-		return "", fmt.Errorf("invalid course_id format")
-	}
-
-	examPeriod, ok := params["exam_period"]
+	examPeriod, ok := body["exam_period"]
 	if !ok {
 		return "", fmt.Errorf("missing exam_period")
 	}
@@ -49,19 +41,24 @@ func PostNewReviewRequest(params map[string]string, body map[string]interface{})
 
 	// add review to db
 	query := `INSERT INTO reviews (student_id, course_id, exam_period, student_message) VALUES ($1, $2, $3, $4)`
-	_, err = db.DB.Exec(query, userID, courseID, examPeriod, studentMessage)
+	result, err := db.DB.Exec(query, userID, courseID, examPeriod, studentMessage)
 	if err != nil {
 		fmt.Println("Insert error:", err)
 		return "", fmt.Errorf("failed to insert review")
 	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil || rowsAffected == 0 {
+		failResponse := map[string]interface{}{
+			"error":   "Insert failed",
+			"message": "Failed to insert review on student end.",
+		}
+		failRespBytes, _ := json.Marshal(failResponse)
+		return string(failRespBytes), nil
+	}
 
 	// Return success response
 	response := map[string]interface{}{
-		"message":         "Review request submitted successfully.",
-		"user_id":         userID,
-		"course_id":       courseID,
-		"exam_period":     examPeriod,
-		"student_message": studentMessage,
+		"message": "Review request submitted successfully on student end.",
 	}
 	respBytes, _ := json.Marshal(response)
 	return string(respBytes), nil
