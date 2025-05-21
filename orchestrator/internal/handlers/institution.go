@@ -26,31 +26,50 @@ type Response struct {
 	ErrorDetail string `json:"error,omitempty"` // optional error text
 }
 
-type AddInstitutionReq struct {
-	Name    string `json:"name" binding:"required"`
-	Credits int    `json:"credits" binding:"required"`
-}
-
 type AddInstitutionResp struct {
 	Status      string `json:"status"`          // "ok" or "error"
 	Message     string `json:"message"`         // human-readable
 	ErrorDetail string `json:"error,omitempty"` // optional error text
 }
 
-func HandleAddInstitution(c *gin.Context, ch *amqp.Channel) {
-	log.Println("Add Institution API called")
+type AddInstitutionReq struct {
+	Name string `json:"name" binding:"required"`
+}
 
-	var req AddInstitutionReq
+// PublishAddInstitution publishes an "add.new" event for a given institution.
+func PublishAddInstitution(ch *amqp.Channel, req AddInstitutionReq) error {
+	corrID := uuid.New().String()
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	return ch.Publish(
+		"clearSky.events", // exchange
+		"add.new",         // routing key
+		false, false,      // mandatory, immediate
+		amqp.Publishing{
+			ContentType:   "application/json",
+			CorrelationId: corrID,
+			Body:          body,
+		},
+	)
+}
+
+func HandleInstitutionRegistered(c *gin.Context, ch *amqp.Channel) {
+	log.Println("Calling registration service...")
+
+	var req UserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, AddInstitutionResp{
+		c.JSON(http.StatusBadRequest, Response{
 			Status:      "error",
 			ErrorDetail: err.Error(),
 		})
 		return
 	}
 
+	// Declare a temporary reply queue.
 	replyQ, err := ch.QueueDeclare(
-		"",    // name: empty → broker auto-generates
+		"",    // empty → broker-named queue
 		false, // durable
 		true,  // auto-delete
 		true,  // exclusive
@@ -58,13 +77,14 @@ func HandleAddInstitution(c *gin.Context, ch *amqp.Channel) {
 		nil,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, AddInstitutionResp{
+		c.JSON(http.StatusInternalServerError, Response{
 			Status:      "error",
 			ErrorDetail: "queue declare failed: " + err.Error(),
 		})
 		return
 	}
 
+	// Start consuming from the reply queue.
 	msgs, err := ch.Consume(
 		replyQ.Name,
 		"",    // consumer tag
@@ -74,111 +94,6 @@ func HandleAddInstitution(c *gin.Context, ch *amqp.Channel) {
 		false, // no-wait
 		nil,
 	)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, AddInstitutionResp{
-			Status:      "error",
-			ErrorDetail: "consume start failed: " + err.Error(),
-		})
-		return
-	}
-
-	corrID := uuid.New().String()
-	reqBody, _ := json.Marshal(req)
-
-	if err := ch.Publish(
-		"clearSky.events", // exchange
-		"add.new",         // routing key
-		false, false,
-		amqp.Publishing{
-			ContentType:   "application/json",
-			CorrelationId: corrID,
-			ReplyTo:       replyQ.Name,
-			Body:          reqBody,
-		},
-	); err != nil {
-		c.JSON(http.StatusInternalServerError, AddInstitutionResp{
-			Status:      "error",
-			ErrorDetail: "publish failed: " + err.Error(),
-		})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	for {
-		select {
-		case <-ctx.Done():
-			c.JSON(http.StatusGatewayTimeout, AddInstitutionResp{
-				Status:      "error",
-				ErrorDetail: "timeout waiting for service",
-			})
-			return
-
-		case d := <-msgs:
-			if d.CorrelationId != corrID {
-				continue
-			}
-
-			var resp AddInstitutionResp
-			if err := json.Unmarshal(d.Body, &resp); err != nil {
-				c.JSON(http.StatusInternalServerError, AddInstitutionResp{
-					Status:      "error",
-					ErrorDetail: "unmarshal reply failed: " + err.Error(),
-				})
-				return
-			}
-
-			statusCode := http.StatusOK
-			if resp.Status != "ok" {
-				statusCode = http.StatusBadRequest
-			}
-			c.JSON(statusCode, resp)
-			return
-		}
-	}
-}
-
-func HandleInstitutionRegistered(c *gin.Context, ch *amqp.Channel) {
-	log.Printf("We are calling registration service in a little bit...")
-	var req UserRequest
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, AvailableResp{
-			Status:      "error",
-			ErrorDetail: err.Error(),
-		})
-		return
-	}
-
-	replyQ, err := ch.QueueDeclare(
-		"",    // name: empty → broker generates one
-		false, // durable
-		true,  // auto-delete when unused
-		true,  // exclusive
-		false, // no-wait
-		nil,
-	)
-	log.Printf("Queue declared")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, AvailableResp{
-			Status:      "error",
-			ErrorDetail: "queue declare failed: " + err.Error(),
-		})
-		log.Printf("JSON ERROR")
-		return
-	}
-
-	msgs, err := ch.Consume(
-		replyQ.Name,
-		"",    // consumer tag
-		true,  // auto-ack
-		true,  // exclusive
-		false, // no-local
-		false, // no-wait
-		nil,
-	)
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, Response{
 			Status:      "error",
@@ -187,8 +102,16 @@ func HandleInstitutionRegistered(c *gin.Context, ch *amqp.Channel) {
 		return
 	}
 
+	// Publish the "institution.registered" event.
 	corrID := uuid.New().String()
-	reqBody, _ := json.Marshal(req)
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Status:      "error",
+			ErrorDetail: "marshal request failed: " + err.Error(),
+		})
+		return
+	}
 
 	if err := ch.Publish(
 		"clearSky.events",        // exchange
@@ -207,6 +130,8 @@ func HandleInstitutionRegistered(c *gin.Context, ch *amqp.Channel) {
 		})
 		return
 	}
+
+	// Wait for a reply or timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -220,12 +145,10 @@ func HandleInstitutionRegistered(c *gin.Context, ch *amqp.Channel) {
 			return
 
 		case d := <-msgs:
-			// ignore other correlation IDs
 			if d.CorrelationId != corrID {
 				continue
 			}
-
-			var resp AvailableResp
+			var resp Response
 			if err := json.Unmarshal(d.Body, &resp); err != nil {
 				c.JSON(http.StatusInternalServerError, Response{
 					Status:      "error",
@@ -240,7 +163,11 @@ func HandleInstitutionRegistered(c *gin.Context, ch *amqp.Channel) {
 			}
 			c.JSON(statusCode, resp)
 
-			HandleAddInstitution(c, ch)
+			// After successful registration, publish add.new event.
+			addReq := AddInstitutionReq{Name: req.Name}
+			if err := PublishAddInstitution(ch, addReq); err != nil {
+				log.Printf("failed to publish add institution: %v", err)
+			}
 			return
 		}
 	}
