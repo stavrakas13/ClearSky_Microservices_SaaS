@@ -3,6 +3,9 @@ package routes
 import (
 	"orchestrator/internal/handlers"
 
+	"time"
+
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -10,7 +13,16 @@ import (
 func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	r := gin.Default()
 
-	// PATCH /purchase → credit purchase RPC
+	r.Use(cors.New(cors.Config{
+		AllowOrigins: []string{"http://localhost:5173", "https://frontend.example.com"},
+		AllowMethods: []string{"POST", "OPTIONS", "PATCH", "PUT"},
+		AllowHeaders: []string{"Content-Type", "Authorization"},
+		MaxAge:       12 * time.Hour,
+	}))
+
+	// 16 MiB in-memory before spilling to /tmp
+	r.MaxMultipartMemory = 16 << 20 // 16 MiB
+
 	r.PATCH("/purchase", func(c *gin.Context) {
 		handlers.HandleCreditsPurchased(c, ch)
 	})
@@ -23,6 +35,13 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		handlers.HandleCreditsSpent(c, ch)
 	})
 
+	r.POST("/registration", func(c *gin.Context) {
+		handlers.HandleInstitutionRegistered(c, ch)
+	})
+
+	r.POST("/upload_init", func(c *gin.Context) {
+		handlers.UploadExcelInit(c, ch)
+	})
 	// Student and Instructor API calls.
 
 	r.PATCH("/student/reviewRequest", func(c *gin.Context) {
