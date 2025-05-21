@@ -1,0 +1,16 @@
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h1>Student Dashboard</h1>
+    <ul>
+      <li><a class="button" href="/student/statistics">1. View course statistics</a></li>
+      <li><a class="button" href="/student/my-courses">2. My courses</a></li>
+      <li><a class="button" href="/student/request">3. Grade review request</a></li>
+      <li><a class="button" href="/student/status">4. Review request status</a></li>
+      <li><a class="button" href="/student/personal">5. View personal grades</a></li>
+    </ul>
+  </main>
+</body></html>

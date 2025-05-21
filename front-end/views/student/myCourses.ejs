@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'My Courses' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <h2>Student name, email,</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>course name</th>
+          <th>exam period</th>
+          <th>grading status</th>
+          <th>action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Row 1: physics (selected) -->
+        <tr style="background:#e6e7ea;">
+          <td>physics</td>
+          <td>spring 2025</td>
+          <td>open</td>
+          <td>
+            <button class="button">view my grades</button>
+            <button class="button">ask for review</button>
+            <button class="button button--secondary" disabled>view review status</button>
+          </td>
+        </tr>
+
+        <!-- Row 2: software (closed) -->
+        <tr>
+          <td>software</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <button class="button">view my grades</button>
+            <button class="button button--secondary" disabled>ask for review</button>
+            <button class="button">view review status</button>
+          </td>
+        </tr>
+
+        <!-- Row 3: mathematics (closed, no review requested) -->
+        <tr>
+          <td>mathematics</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <button class="button">view my grades</button>
+            <button class="button button--secondary" disabled>ask for review</button>
+            <button class="button button--secondary" disabled>view review status</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+</body>
+</html>

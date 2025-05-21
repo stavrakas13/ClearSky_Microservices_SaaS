@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Instructor Dashboard' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h1>Instructor Dashboard</h1>
+    <ul>
+      <li><a class="button" href="/instructor/post-initial">1. Post initial grades</a></li>
+      <li><a class="button" href="/instructor/review-list">2. Review requests</a></li>
+      <li><a class="button" href="/instructor/reply">3. Reply to request</a></li>
+      <li><a class="button" href="/instructor/post-final">4. Post final grades</a></li>
+      <li><a class="button" href="/instructor/statistics">5. View grade statistics</a></li>
+    </ul>
+  </main>
+</body>
+</html>

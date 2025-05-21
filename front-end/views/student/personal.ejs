@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'View Personal Grades' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <h2>Student name, email,</h2>
+
+    <!-- Course selection table -->
+    <table>
+      <thead>
+        <tr>
+          <th>course name</th>
+          <th>exam period</th>
+          <th>grading status</th>
+          <th>action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="background:#e6e7ea;">
+          <td>physics</td>
+          <td>spring 2025</td>
+          <td>open</td>
+          <td>
+            <button class="button">view my grades</button>
+            <button class="button">ask for review</button>
+            <button class="button button--secondary" disabled>view review status</button>
+          </td>
+        </tr>
+        <tr>
+          <td>software</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <button class="button">view my grades</button>
+            <button class="button button--secondary" disabled>ask for review</button>
+            <button class="button">view review status</button>
+          </td>
+        </tr>
+        <tr>
+          <td>mathematics</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <button class="button">view my grades</button>
+            <button class="button button--secondary" disabled>ask for review</button>
+            <button class="button button--secondary" disabled>view review status</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Personal grades & charts panel -->
+    <div class="panel" style="display:flex;gap:1rem;">
+      <!-- Grades input panel -->
+      <div style="flex:1;border:1px solid #c2c5c9;border-radius:4px;padding:0.5rem;">
+        <div class="panel-header">my grades&nbsp;&nbsp;physics – spring 2025</div>
+        <div class="form-group">
+          <label>Total</label>
+          <input readonly value="84" />
+        </div>
+        <div class="form-group">
+          <label>Q1</label>
+          <input readonly value="22" />
+        </div>
+        <div class="form-group">
+          <label>Q2</label>
+          <input readonly value="19" />
+        </div>
+        <div class="form-group">
+          <label>Q3</label>
+          <input readonly value="18" />
+        </div>
+      </div>
+
+      <!-- Total grades histogram -->
+      <div style="flex:1;border:1px solid #c2c5c9;border-radius:4px;padding:0.5rem;">
+        <div class="panel-header">physics – spring 2025 – total</div>
+        <div style="height:180px;display:flex;align-items:center;justify-content:center;color:#999;">
+          [Histogram Chart]
+        </div>
+      </div>
+
+      <!-- Q1 grades bar chart -->
+      <div style="flex:1;border:1px solid #c2c5c9;border-radius:4px;padding:0.5rem;">
+        <div class="panel-header">physics – spring 2025 – Q1</div>
+        <div style="height:180px;display:flex;align-items:center;justify-content:center;color:#999;">
+          [Q1 Chart]
+        </div>
+      </div>
+    </div>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+</body>
+</html>
