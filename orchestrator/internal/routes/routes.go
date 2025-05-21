@@ -35,9 +35,9 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		handlers.HandleCreditsSpent(c, ch)
 	})
 
-	// r.POST("/registration", func(c *gin.Context) {
-	// 	handlers.HandleRegistration(c, ch)
-	// })
+	r.POST("/registration", func(c *gin.Context) {
+		handlers.HandleInstitutionRegistered(c, ch)
+	})
 
 	r.POST("/upload_init", func(c *gin.Context) {
 		handlers.UploadExcelInit(c, ch)

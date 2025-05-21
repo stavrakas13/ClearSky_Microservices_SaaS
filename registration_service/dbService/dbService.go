@@ -41,7 +41,7 @@ func AddInstitution(inst_name, email, director string) (int, error) {
 	var existing string
 	err := Pool.QueryRow(ctx, checkQuery, inst_name).Scan(&existing)
 
-	if err == nil && existing == inst_name {
+	if err != nil && existing == inst_name {
 		return 2, fmt.Errorf("institution already exists")
 	}
 
