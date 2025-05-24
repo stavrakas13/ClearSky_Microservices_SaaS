@@ -43,27 +43,37 @@ func ConsumeAuthQueue(db *gorm.DB) {
 				continue
 			}
 
+			var resp AuthResponse
+			var corrID = d.CorrelationId
+			var replyTo = d.ReplyTo
+
 			switch req.Type {
 			case "register":
-				handleRegister(db, req)
+				resp = handleRegister(db, req)
 			case "login":
-				handleLogin(db, req)
+				resp = handleLogin(db, req)
+			case "delete":
+				resp = handleDelete(db, req) // add this line
 			default:
 				log.Println("Unknown auth type:", req.Type)
+				resp = AuthResponse{Status: "error", Message: "Unknown auth type"}
+			}
+
+			if replyTo != "" && corrID != "" {
+				SendResponse(Channel, replyTo, corrID, resp)
 			}
 			d.Ack(false)
 		}
 	}()
 }
 
-func handleRegister(db *gorm.DB, req AuthRequest) {
+func handleRegister(db *gorm.DB, req AuthRequest) AuthResponse {
 	var existing model.User
 	if err := db.Where("email = ?", req.Email).First(&existing).Error; err == nil {
-		PublishEvent("auth.register.failure", AuthResponse{
+		return AuthResponse{
 			Status:  "error",
 			Message: "Email already registered",
-		})
-		return
+		}
 	}
 
 	hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -74,47 +84,56 @@ func handleRegister(db *gorm.DB, req AuthRequest) {
 		Role:         "student",
 	}
 	if err := db.Create(&user).Error; err != nil {
-		PublishEvent("auth.register.failure", AuthResponse{
+		return AuthResponse{
 			Status:  "error",
 			Message: "Failed to create user",
-		})
-		return
+		}
 	}
 
-	PublishEvent("auth.register.success", AuthResponse{
+	return AuthResponse{
 		Status: "ok",
 		UserID: user.ID,
-	})
+	}
 }
 
-func handleLogin(db *gorm.DB, req AuthRequest) {
+func handleLogin(db *gorm.DB, req AuthRequest) AuthResponse {
 	var user model.User
 	if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		PublishEvent("auth.login.failure", AuthResponse{
+		return AuthResponse{
 			Status:  "error",
 			Message: "Invalid credentials",
-		})
-		return
+		}
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		PublishEvent("auth.login.failure", AuthResponse{
+		return AuthResponse{
 			Status:  "error",
 			Message: "Invalid credentials",
-		})
-		return
+		}
 	}
 	token, err := jwt.GenerateToken(user.ID, user.Email, user.Role)
 	if err != nil {
-		PublishEvent("auth.login.failure", AuthResponse{
+		return AuthResponse{
 			Status:  "error",
 			Message: "Token generation failed",
-		})
-		return
+		}
 	}
-	PublishEvent("auth.login.success", AuthResponse{
+	return AuthResponse{
 		Status: "ok",
 		Token:  token,
 		Role:   user.Role,
 		UserID: user.ID,
-	})
+	}
+}
+
+// Add this function:
+func handleDelete(db *gorm.DB, req AuthRequest) AuthResponse {
+	if err := db.Where("email = ?", req.Email).Delete(&model.User{}).Error; err != nil {
+		return AuthResponse{
+			Status:  "error",
+			Message: "Failed to delete user",
+		}
+	}
+	return AuthResponse{
+		Status: "ok",
+	}
 }

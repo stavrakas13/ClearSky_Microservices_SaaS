@@ -68,5 +68,20 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		//   Returns JSON: {"data": map[string]interface{}} acknowledgments from services
 		handlers.HandlePostResponse(c, ch)
 	})
+
+	// User Management Endpoints
+	r.POST("/user/register", func(c *gin.Context) {
+		handlers.HandleUserRegister(c, ch)
+	})
+	r.POST("/user/login", func(c *gin.Context) {
+		handlers.HandleUserLogin(c, ch)
+	})
+	r.DELETE("/user/delete", func(c *gin.Context) {
+		handlers.HandleUserDelete(c, ch)
+	})
+	r.POST("/user/google-login", func(c *gin.Context) {
+		handlers.HandleUserGoogleLogin(c, ch)
+	})
+
 	return r
 }

@@ -25,3 +25,7 @@ bindings:
   - "instructor.getRequestsList"
   - "instructor.getRequestInfo"
   - "instructor.insertStudentRequest"
+  - "auth.register"
+  - "auth.login"
+  - "auth.delete"
+  - "auth.login.google"

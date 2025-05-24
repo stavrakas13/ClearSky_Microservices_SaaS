@@ -24,22 +24,21 @@ func Connect() {
 		return
 	}
 
-	// Declare the exchange: type fanout (δημοσίευση σε όλους τους subscribers)
-	err = ch.ExchangeDeclare(
-		"user_events", // exchange name
-		"fanout",      // type
-		true,          // durable
-		false,         // auto-deleted
-		false,         // internal
-		false,         // no-wait
-		nil,           // arguments
-	)
-	if err != nil {
-		log.Println("⚠️ Could not declare exchange:", err)
-		return
+	if err := ch.ExchangeDeclare(
+		"clearsky.events", "topic", true, false, false, false, nil,
+	); err != nil {
+		log.Fatalf("Declare clearsky.events: %v", err)
 	}
 
-	log.Println("✅ Connected to RabbitMQ and declared exchange 'user_events'")
+	queue := "google_auth.request"
+	if _, err := ch.QueueDeclare(queue, true, false, false, false, nil); err != nil {
+		log.Fatalf("QueueDeclare %s: %v", queue, err)
+	}
+	if err := ch.QueueBind(
+		queue, "user.login.google", "clearsky.events", false, nil,
+	); err != nil {
+		log.Fatalf("QueueBind user.login.google: %v", err)
+	}
 }
 
 func PublishLoginEvent(email string) {

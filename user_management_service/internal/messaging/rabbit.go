@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -21,34 +22,45 @@ func Init() {
 		url = "amqp://guest:guest@rabbitmq:5672/"
 	}
 	var err error
-	Conn, err = amqp.Dial(url)
+	for i := 0; i < 10; i++ { // Try 10 times
+		Conn, err = amqp.Dial(url)
+		if err == nil {
+			break
+		}
+		log.Printf("RabbitMQ dial failed: %v (retrying in 3s)", err)
+		time.Sleep(3 * time.Second)
+	}
 	if err != nil {
 		log.Fatalf("RabbitMQ dial: %v", err)
 	}
+
+	// Initialize Channel after successful connection
 	Channel, err = Conn.Channel()
 	if err != nil {
 		log.Fatalf("RabbitMQ channel: %v", err)
 	}
 
-	// 1) commands exchange
+	// 1) Declare the orchestrator's exchange (must match orchestrator config)
 	if err := Channel.ExchangeDeclare(
-		"orchestrator.commands", "topic", true, false, false, false, nil,
+		"clearsky.events", "topic", true, false, false, false, nil,
 	); err != nil {
-		log.Fatalf("Declare orchestrator.commands: %v", err)
+		log.Fatalf("Declare clearsky.events: %v", err)
 	}
 
-	// 2) domain‐events exchange
-	if err := Channel.ExchangeDeclare(
-		"clearSky.events", "topic", true, false, false, false, nil,
-	); err != nil {
-		log.Fatalf("Declare clearSky.events: %v", err)
-	}
-
-	// 3) auth.request queue & bindings
+	// 2) Declare and bind the queue for login/register
 	queue := "auth.request"
 	if _, err := Channel.QueueDeclare(queue, true, false, false, false, nil); err != nil {
 		log.Fatalf("QueueDeclare %s: %v", queue, err)
 	}
+	for _, key := range []string{"user.login", "user.register"} {
+		if err := Channel.QueueBind(
+			queue, key, "clearsky.events", false, nil,
+		); err != nil {
+			log.Fatalf("QueueBind %s: %v", key, err)
+		}
+	}
+
+	// 3) auth.request queue & bindings for orchestrator integration
 	for _, key := range []string{"auth.register", "auth.login"} {
 		if err := Channel.QueueBind(queue, key, "orchestrator.commands", false, nil); err != nil {
 			log.Fatalf("QueueBind %s → %s: %v", queue, key, err)
@@ -64,7 +76,7 @@ func PublishEvent(routingKey string, payload interface{}) {
 		return
 	}
 	err = Channel.Publish(
-		"clearSky.events", // exchange
+		"clearsky.events", // exchange (fixed name)
 		routingKey,        // routing key
 		false, false,
 		amqp.Publishing{

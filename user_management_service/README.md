@@ -23,9 +23,8 @@ This microservice handles user authentication and authorization for the clearSKY
 ### RabbitMQ Messaging
 
 - **Queue:** `auth.request`
-- **Message Types:**
-  - `register`: Register a new user
-  - `login`: Authenticate and respond with JWT
+- **Exchange:** `orchestrator.commands` (topic)
+- **Bindings:** `auth.register`, `auth.login`
 - **Reply Queue:** Defined by the `reply_to` field in the request
 - **Correlation ID:** Supported for message tracking
 
@@ -35,9 +34,7 @@ This microservice handles user authentication and authorization for the clearSKY
 {
   "type": "login",
   "email": "student@example.com",
-  "password": "mypassword123",
-  "reply_to": "auth.response",
-  "correlation_id": "xyz-123"
+  "password": "mypassword123"
 }
 ```
 
@@ -50,6 +47,12 @@ This microservice handles user authentication and authorization for the clearSKY
   "role": "student"
 }
 ```
+
+## Orchestrator Integration
+
+- The service listens on the `auth.request` queue for messages with routing keys `auth.register` and `auth.login` from the `orchestrator.commands` exchange.
+- It replies to the `reply_to` queue with the same `correlation_id` for RPC-style communication with the orchestrator.
+- Make sure the orchestrator and this service use the same RabbitMQ instance and exchange/queue names.
 
 ## Execution Instructions (Dockerized)
 

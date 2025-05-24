@@ -1,5 +1,9 @@
 # 1η Φάση: Build
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24.1-alpine AS builder
+
+# Enable CGO and install C dependencies for SQLite
+ENV CGO_ENABLED=1
+RUN apk add --no-cache gcc musl-dev sqlite-dev git
 
 WORKDIR /app
 
@@ -9,13 +13,16 @@ RUN go mod download
 
 COPY . .
 
-# Κτίζουμε το binary
+# Build the binary (with sqlite driver)
 RUN go build -o google_auth_service main.go
 
 # 2η Φάση: Τελικό Image
 FROM alpine:latest
 
 WORKDIR /root/
+
+# Install SQLite for runtime
+RUN apk --no-cache add ca-certificates sqlite
 
 # Αντιγραφή μόνο του binary
 COPY --from=builder /app/google_auth_service .
