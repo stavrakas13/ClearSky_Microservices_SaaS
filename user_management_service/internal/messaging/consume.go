@@ -16,6 +16,7 @@ type AuthRequest struct {
 	Type     string `json:"type"` // "register" ή "login"
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Role     string `json:"role,omitempty"` // add this field
 }
 
 type AuthResponse struct {
@@ -77,11 +78,16 @@ func handleRegister(db *gorm.DB, req AuthRequest) AuthResponse {
 	}
 
 	hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	role := req.Role
+	if role == "" {
+		role = "student"
+	}
+	// Optionally: validate role value here
 	user := model.User{
 		ID:           uuid.NewString(),
 		Email:        req.Email,
 		PasswordHash: string(hash),
-		Role:         "student",
+		Role:         role,
 	}
 	if err := db.Create(&user).Error; err != nil {
 		return AuthResponse{

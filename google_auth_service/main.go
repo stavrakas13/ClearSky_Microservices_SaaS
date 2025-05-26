@@ -15,6 +15,7 @@ import (
 func main() {
 	database.ConnectDatabase()
 	rabbitmq.Connect()
+	rabbitmq.StartGoogleAuthConsumer()
 	port := "8086"
 	if os.Getenv("PORT") != "" {
 		port = os.Getenv("PORT")

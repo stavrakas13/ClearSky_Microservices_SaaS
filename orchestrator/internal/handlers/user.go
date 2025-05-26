@@ -63,6 +63,7 @@ func HandleUserRegister(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		Role     string `json:"role"` // add this field
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -72,6 +73,7 @@ func HandleUserRegister(c *gin.Context, ch *amqp.Channel) {
 		"type":     "register",
 		"email":    req.Email,
 		"password": req.Password,
+		"role":     req.Role, // add this line
 	}
 	resp, err := rpcRequest(ch, "orchestrator.commands", "auth.register", payload)
 	if err != nil {

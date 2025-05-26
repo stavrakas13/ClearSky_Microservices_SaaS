@@ -22,9 +22,10 @@ func main() {
 	defer ch.Close()
 
 	loginReq := map[string]string{
-		"type":     "register",             // change to "register"
-		"email":    "student2@example.com", // use a new email
+		"type":     "register",
+		"email":    "student2@example.com",
 		"password": "mypassword123",
+		"role":     "student",
 	}
 	body, _ := json.Marshal(loginReq)
 
@@ -33,7 +34,7 @@ func main() {
 
 	err = ch.Publish(
 		"orchestrator.commands", // exchange
-		"auth.login",            // routing key
+		"auth.register",         // <-- change from "auth.login" to "auth.register"
 		false,
 		false,
 		amqp.Publishing{
