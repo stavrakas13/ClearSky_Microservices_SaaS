@@ -1,5 +1,4 @@
 DROP TABLE IF EXISTS grades;
-DROP TABLE IF EXISTS exam_students;
 DROP TABLE IF EXISTS exams;
 
 CREATE TABLE exams (
@@ -23,11 +22,3 @@ CREATE TABLE grades (
         REFERENCES exams(exam_date, class_id)
 );
 
-CREATE TABLE grade_distributions (
-    class_id TEXT NOT NULL,
-    exam_date TEXT NOT NULL,
-    category TEXT NOT NULL,
-    value INT NOT NULL,
-    count INT NOT NULL,
-    PRIMARY KEY (class_id, exam_date, category, value)
-);

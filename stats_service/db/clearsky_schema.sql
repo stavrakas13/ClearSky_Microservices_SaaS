@@ -1,5 +1,4 @@
 DROP TABLE IF EXISTS grades;
-DROP TABLE IF EXISTS exam_students;
 DROP TABLE IF EXISTS exams;
 
 CREATE TABLE exams (
