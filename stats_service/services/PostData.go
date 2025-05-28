@@ -1,8 +1,9 @@
 package services
 
 import (
+	"fmt"
+	"log"
 	"net/http"
-
 	"stats_service/models"
 
 	"github.com/gin-gonic/gin"
@@ -30,8 +31,9 @@ func PostData(db *gorm.DB) gin.HandlerFunc {
 				DoUpdates: clause.AssignmentColumns([]string{"uni_id", "teacher_id", "mark_scale", "weights"}),
 			}).
 			Create(&p.Exam).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+			/*c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return*/
+			return fmt.Errorf("failed to upsert exam: %w", err)
 		}
 
 		// Εισαγωγή / upsert για κάθε Grade
@@ -45,11 +47,23 @@ func PostData(db *gorm.DB) gin.HandlerFunc {
 					DoUpdates: clause.AssignmentColumns([]string{"question_scores", "total_score"}),
 				}).
 				Create(&g).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
+				/*c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return*/
+				return fmt.Errorf("failed to upsert grade for student %s: %w", g.StudentID, err)
 			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "✅ Εισαγωγή επιτυχής"})
 	}
+	// 3. Κάλεσε τον υπολογισμό των κατανομών
+	//    (Αυτό θα μπορούσε επίσης να γίνει ασύγχρονα στέλνοντας ένα άλλο μήνυμα
+	//    αν ο υπολογισμός είναι χρονοβόρος, αλλά για RPC μπορεί να είναι σύγχρονο)
+	err := CalculateDistributions(db, exam.ClassID, exam.ExamDate)
+	//err := services.CalculateDistributions(db, classID, examDate)
+
+	if err != nil {
+		return fmt.Errorf("failed to calculate distributions: %w", err)
+	}
+	log.Println("✅ Distributions calculated successfully.")
+	return nil
 }
