@@ -40,7 +40,6 @@ func PostData(db *gorm.DB) gin.HandlerFunc {
 		for _, g := range p.Grades {
 			// Υπολογισμός total_score
 			g.TotalScore = CalculateTotalGrade(g.QuestionScores, p.Exam.Weights, models.MarkScale(p.Exam.MarkScale))
-
 			if err := db.
 				Clauses(clause.OnConflict{
 					Columns:   []clause.Column{{Name: "class_id"}, {Name: "exam_date"}, {Name: "student_id"}},

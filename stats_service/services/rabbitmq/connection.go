@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	amqp "github.com/rabbitmq/amqp091-go"
+	amqp "github.com/rabbitmq/amqp091-go" //τρεχω ενα go mod tidy για να το προσθεσει
 )
 
 var Conn *amqp.Connection

@@ -50,6 +50,7 @@ func StartStatsRPCServer(db *gorm.DB) {
 		log.Fatalf("Failed to declare exchange 'service_rpc_exchange': %v", err)
 	}
 
+	//Δηλώνει την ουρά RPCQueueName όπου θα λαμβάνει τα αιτήματα το service σου.
 	q, err := Channel.QueueDeclare(
 		RPCQueueName, // name
 		true,         // durable
@@ -69,6 +70,7 @@ func StartStatsRPCServer(db *gorm.DB) {
 		"stats.get_distributions",
 	}
 
+	//Συνδέει (bind) την ουρά σου (q.Name) με τον exchange ("service_rpc_exchange") για κάθε ένα από τα routingKeys.
 	for _, rk := range routingKeys {
 		err = Channel.QueueBind(
 			q.Name,                 // queue name
@@ -98,6 +100,7 @@ func StartStatsRPCServer(db *gorm.DB) {
 
 	log.Printf(" [*] StatsService RPC Server waiting for messages on queue '%s'. To exit press CTRL+C", q.Name)
 
+	//Ξεκινάει ένα νέο "νήμα" (goroutine) που επεξεργάζεται τα εισερχόμενα μηνύματα ένα-ένα.
 	go func() {
 		for d := range msgs {
 			log.Printf("Received RPC request with routing key '%s': %s", d.RoutingKey, d.Body)
@@ -105,6 +108,8 @@ func StartStatsRPCServer(db *gorm.DB) {
 			var responseBody []byte
 
 			switch d.RoutingKey {
+			//Αυτή είναι η συνάρτηση που θα υλοποιήσεις εσύ στο services package σου,
+			// παίρνοντας τη λογική από το παλιό PostData και την κλήση στο CalculateDistributions.
 			case "stats.persist_and_calculate":
 				var payload PersistDataPayload
 				if err := json.Unmarshal(d.Body, &payload); err != nil {
@@ -112,7 +117,7 @@ func StartStatsRPCServer(db *gorm.DB) {
 				} else {
 					// Κάλεσε την υπάρχουσα λογική σου, αλλά τροποποίησέ την
 					// για να μην εξαρτάται από το gin.Context
-					err := services.HandlePersistAndCalculate(db, payload.Exam, payload.Grades)
+					err := services.CalculateDistributions(db, payload.Exam, payload.Grades)
 					if err != nil {
 						response = RPCResponse{Status: "error", Message: "Failed to process data: " + err.Error()}
 					} else {
@@ -125,7 +130,8 @@ func StartStatsRPCServer(db *gorm.DB) {
 				if err := json.Unmarshal(d.Body, &payload); err != nil {
 					response = RPCResponse{Status: "error", Message: "Invalid payload: " + err.Error()}
 				} else {
-					distributions, err := services.GetDistributions(db, payload.ClassID, payload.ExamDate) // Νέα συνάρτηση
+					// Κάλεσε την υπάρχουσα λογική σου για να πάρεις τις κατανομές
+					distributions, err := services.GetDistributions(db, payload.ClassID, payload.ExamDate)
 					if err != nil {
 						response = RPCResponse{Status: "error", Message: "Failed to get distributions: " + err.Error()}
 					} else {

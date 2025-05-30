@@ -6,8 +6,9 @@ import (
 	"time"
 
 	//"stats_service/routes"
-	"stats_service/rabbitmq"
-	//"github.com/gin-gonic/gin"
+	"stats_service/rabbitmq" //τρεχω ενα go mod tidy για να το προσθεσει
+
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -31,8 +32,8 @@ func main() {
 
 	rabbitmq.StartStatsRPCServer(database)
 
-	/*r := gin.Default()
-	routes.SetupRoutes(r, database)*/
+	r := gin.Default()
+	//routes.SetupRoutes(r, database)*/
 
 	log.Println("🚀 Server running on http://localhost:8080")
 	r.Run(":8080")
