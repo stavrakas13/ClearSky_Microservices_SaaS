@@ -13,20 +13,36 @@ services:
       - ./initdb:/docker-entrypoint-initdb.d
     networks:
       - backendnet
+    restart: on-failure
 
   api:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: stats_backend
-    ports:
-      - "8083:8080"
+    # Αφαίρω τα ports αν δεν έχει HTTP server
+    #ports:
+    #  - "8083:8080"
     env_file:
       - .env
     depends_on:
       - db
+      - rabbitmq
     networks:
       - backendnet
+    restart: on-failure
+    
+  rabbitmq: # Πρόσθεσε το RabbitMQ service αν δεν υπάρχει στο κεντρικό compose
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq_stats # Δώσε μοναδικό όνομα αν χρειάζεται
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    networks:
+      - backendnet
+    environment: saas_vhost # Αν χρειάζεσαι συγκεκριμένο user/pass
+    RABBITMQ_DEFAULT_USER: vailis
+    RABBITMQ_DEFAULT_PASS: 1234vas
     restart: on-failure
 
 networks:
