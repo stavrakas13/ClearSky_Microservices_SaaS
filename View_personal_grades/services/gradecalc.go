@@ -1,6 +1,8 @@
 package services
 
-import "stats_service/models"
+import (
+	"View_personal_grades/models"
+)
 
 func CalculateTotalGrade(scores []float64, weights []float64, scale models.MarkScale) float64 {
 	if len(scores) != len(weights) || len(scores) == 0 {
