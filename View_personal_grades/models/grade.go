@@ -6,4 +6,5 @@ type Grade struct {
 	StudentID      string     `gorm:"primaryKey;column:student_id" json:"student_id"`
 	QuestionScores FloatSlice `gorm:"type:jsonb" json:"question_scores"`
 	TotalScore     float64    `gorm:"column:total_score" json:"total_score"`
+	IsFinalized    bool       `gorm:"column:is_finalized;default:true"`
 }

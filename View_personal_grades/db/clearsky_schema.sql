@@ -17,6 +17,7 @@ CREATE TABLE grades (
     student_id TEXT NOT NULL,
     question_scores JSONB NOT NULL,
     total_score FLOAT,
+    is_finalized BOOLEAN DEFAULT TRUE,
     PRIMARY KEY (exam_date, class_id, student_id),
     FOREIGN KEY (exam_date, class_id)
         REFERENCES exams(exam_date, class_id)
