@@ -15,6 +15,8 @@ type uploadPayload struct {
 	Grades []models.Grade `json:"grades" binding:"required,dive"`
 }
 
+// PostData returns a Gin handler that inserts exam metadata and grades into the
+// database, creating or updating records as needed.
 func PostData(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var p uploadPayload

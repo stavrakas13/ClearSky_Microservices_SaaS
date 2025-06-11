@@ -10,7 +10,7 @@ import (
 )
 
 // HandlePersistAndCalculate αποθηκεύει τα δεδομένα και υπολογίζει τις κατανομές.
-// Καλείται από τον RPC consumer.
+// Καλείται από τον RabbitMQ consumer.
 func HandlePersistAndCalculate(db *gorm.DB, exam models.Exam, grades []models.Grade) error {
 	log.Printf("INFO: Persisting data and calculating distributions for ClassID: %s, ExamDate: %s", exam.ClassID, exam.ExamDate)
 

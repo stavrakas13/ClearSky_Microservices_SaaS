@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"stats_service/models"
+	"View_personal_grades/models"
 
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"

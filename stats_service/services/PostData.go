@@ -53,16 +53,5 @@ func PostData(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "✅ Εισαγωγή επιτυχής"})
-	}
-	// 3. Κάλεσε τον υπολογισμό των κατανομών
-	//    (Αυτό θα μπορούσε επίσης να γίνει ασύγχρονα στέλνοντας ένα άλλο μήνυμα
-	//    αν ο υπολογισμός είναι χρονοβόρος, αλλά για RPC μπορεί να είναι σύγχρονο)
-	err := CalculateDistributions(db, exam.ClassID, exam.ExamDate)
-	//err := services.CalculateDistributions(db, classID, examDate)
-
-	if err != nil {
-		return fmt.Errorf("failed to calculate distributions: %w", err)
-	}
-	log.Println("✅ Distributions calculated successfully.")
-	return nil
+        }
 }

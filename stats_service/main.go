@@ -39,8 +39,8 @@ func main() {
 	}
 	defer rabbitmq.Close()
 
-	rabbitmq.StartStatsRPCServer(database) // Ξεκινά τον RPC server
+	rabbitmq.StartConsumer(database)
 
-	log.Println("✅ Stats RPC server is running...")
+	log.Println("✅ Stats consumer is running…")
 	select {}
 }
