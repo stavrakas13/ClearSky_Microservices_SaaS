@@ -5,10 +5,7 @@ It consumes messages from RabbitMQ and replies with requested statistics.
 
 ## Environment variables
 - `DB_HOST`, `DB_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` – PostgreSQL settings
-
-
 - `DB_DSN` – optional full connection string used by docker-compose
-
 
 - `RABBITMQ_URL` – AMQP URI for RabbitMQ
 

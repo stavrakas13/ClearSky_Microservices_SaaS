@@ -1,5 +1,9 @@
 package rabbitmq
 
+// This package implements the RabbitMQ consumer used by the stats service.
+// It listens for requests on a dedicated queue and replies when needed.
+
+
 import (
 	"encoding/json"
 	"log"
@@ -10,15 +14,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// Names for exchange, queue and routing keys used by stats_service.
+
+// Names for the exchange, queue and routing keys used by stats_service.
 const (
-	ExchangeName  = "clearSky.events"
-	QueueName     = "stats_queue"
-	RKPersistCalc = "stats.persist_and_calculate"
-	RKGetDists    = "stats.get_distributions"
+        // ExchangeName is the common direct exchange used by all services.
+        ExchangeName = "clearSky.events"
+        // QueueName receives RPC messages destined for the stats service.
+        QueueName = "stats_queue"
+        // RKPersistCalc instructs the service to store grades and calculate
+        // distributions.
+        RKPersistCalc = "stats.persist_and_calculate"
+        // RKGetDists requests the already calculated distributions for a given
+        // exam.
+        RKGetDists    = "stats.get_distributions"
 )
 
-// StartConsumer configures the queue/bindings and starts workers processing messages.
+// StartConsumer configures the exchange and queue used by the stats service and
+// starts a few goroutines that process messages from RabbitMQ. Each worker
+// calls handleMessage for every delivery it receives.
+
 func StartConsumer(db *gorm.DB) {
 	if Channel == nil {
 		log.Fatal("RabbitMQ channel not initialized")
@@ -62,6 +76,10 @@ func StartConsumer(db *gorm.DB) {
 	}
 }
 
+// handleMessage performs the business logic for a single delivery. Depending on
+// the routing key it either persists incoming grades or returns previously
+// calculated distributions.
+
 func handleMessage(db *gorm.DB, d amqp.Delivery) {
 	switch d.RoutingKey {
 	case RKPersistCalc:
@@ -96,16 +114,19 @@ func handleMessage(db *gorm.DB, d amqp.Delivery) {
 			d.Nack(false, false)
 			return
 		}
-		if d.ReplyTo != "" {
-			body, _ := json.Marshal(distributions)
-			if err := Channel.Publish("", d.ReplyTo, false, false, amqp.Publishing{
-				ContentType:   "application/json",
-				CorrelationId: d.CorrelationId,
-				Body:          body,
-			}); err != nil {
-				log.Printf("failed to publish reply: %v", err)
-			}
-		}
+                // For RPC style requests send the JSON encoded result back to
+                // the provided reply queue.
+                if d.ReplyTo != "" {
+                        body, _ := json.Marshal(distributions)
+                        if err := Channel.Publish("", d.ReplyTo, false, false, amqp.Publishing{
+                                ContentType:   "application/json",
+                                CorrelationId: d.CorrelationId,
+                                Body:          body,
+                        }); err != nil {
+                                log.Printf("failed to publish reply: %v", err)
+                        }
+                }
+
 		d.Ack(false)
 	default:
 		log.Printf("unknown routing key %s", d.RoutingKey)

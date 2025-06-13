@@ -1,5 +1,8 @@
 package rabbitmq
 
+// This package holds the RabbitMQ connection logic for the personal grades
+// service.  It exposes a global AMQP channel used by the consumer.
+
 import (
     "fmt"
     "log"
@@ -8,10 +11,16 @@ import (
     amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// Conn and Channel are shared between the consumer workers. They are initialised
+// by Init() and closed via Close().
 var Conn *amqp.Connection
 var Channel *amqp.Channel
 
-// Init establishes the RabbitMQ connection and opens a channel.
+// Init establishes a connection to RabbitMQ using the URL from the
+// RABBITMQ_URL environment variable. If none is provided it falls back to the
+// default guest credentials used in the repository's docker-compose setup. It
+// then opens a channel that will be shared by all workers.
+
 func Init() error {
     rabbitMQURL := os.Getenv("RABBITMQ_URL")
     if rabbitMQURL == "" {
@@ -35,7 +44,9 @@ func Init() error {
     return nil
 }
 
-// Close cleans up the channel and connection.
+// Close cleans up the AMQP channel and connection. It is safe to call even if
+// the connection was never opened.
+
 func Close() {
     if Channel != nil {
         if err := Channel.Close(); err != nil {

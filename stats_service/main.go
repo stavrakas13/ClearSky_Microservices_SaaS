@@ -1,5 +1,8 @@
 package main
 
+// The stats service persists grades and calculates exam statistics. It runs as
+// a background worker consuming events from RabbitMQ.
+
 import (
 	"log"
 	"stats_service/db"
@@ -11,10 +14,12 @@ import (
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("INFO: No .env file found, using environment variables.")
-	}
+        // Load environment variables when running locally. In containerised
+        // environments this will simply do nothing if the file is missing.
+        err := godotenv.Load()
+        if err != nil {
+                log.Println("INFO: No .env file found, using environment variables.")
+        }
 
 	database, err := db.InitDB()
 	if err != nil {
@@ -23,8 +28,10 @@ func main() {
 	sqlDB, _ := database.DB()
 	defer sqlDB.Close()
 
-	maxRetries := 15
-	retryDelay := 3 * time.Second
+        // Retry RabbitMQ connection a few times during startup to handle race
+        // conditions when using docker-compose.
+        maxRetries := 15
+        retryDelay := 3 * time.Second
 	for i := 0; i < maxRetries; i++ {
 		err = rabbitmq.Init()
 		if err == nil {
@@ -39,7 +46,10 @@ func main() {
 	}
 	defer rabbitmq.Close()
 
-	rabbitmq.StartConsumer(database)
+        // Start consuming events. StartConsumer will spawn goroutines and block
+        // until the program exits.
+        rabbitmq.StartConsumer(database)
+
 
 	log.Println("✅ Stats consumer is running…")
 	select {}

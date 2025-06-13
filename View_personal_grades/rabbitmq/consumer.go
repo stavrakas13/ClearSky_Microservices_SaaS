@@ -10,14 +10,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// Names for the exchange, queue and routing keys used by this service.
 const (
+	// ExchangeName is the direct exchange shared among services.
 	ExchangeName = "clearSky.events"
-	QueueName    = "personal_grades_queue"
+	// QueueName is where this service receives RPC style requests.
+	QueueName = "personal_grades_queue"
+	// RKGetCourses triggers retrieval of the student's registered courses.
 	RKGetCourses = "personal.get_courses"
-	RKGetGrades  = "personal.get_grades"
+	// RKGetGrades triggers retrieval of a student's exam grades.
+	RKGetGrades = "personal.get_grades"
+	// RKPersistData instructs the service to store new exam data.
+	RKPersistData = "personal.persist_grades"
 )
 
-// StartConsumer sets up the queue and spawns workers to handle messages.
+// StartConsumer configures the exchange/queue bindings and launches a few
+// worker goroutines that process incoming messages. It must be called after a
+// successful connection using connection.Init().
+
 func StartConsumer(db *gorm.DB) {
 	if Channel == nil {
 		log.Fatal("RabbitMQ channel not initialized")
@@ -32,7 +42,8 @@ func StartConsumer(db *gorm.DB) {
 		log.Fatalf("Failed to declare queue %s: %v", QueueName, err)
 	}
 
-	for _, rk := range []string{RKGetCourses, RKGetGrades} {
+	for _, rk := range []string{RKGetCourses, RKGetGrades, RKPersistData} {
+
 		if err := Channel.QueueBind(q.Name, rk, ExchangeName, false, nil); err != nil {
 			log.Fatalf("Failed to bind queue %s with key %s: %v", q.Name, rk, err)
 		}
@@ -59,10 +70,26 @@ func StartConsumer(db *gorm.DB) {
 	}
 }
 
-// handleMessage dispatches incoming messages based on their routing key and
-// publishes a response if the sender provided a reply queue.
+// handleMessage decodes the JSON payload of an incoming delivery and calls the
+// appropriate service function. When the caller has specified a reply queue the
+// result (or an error) is marshalled back to JSON and sent there.
 func handleMessage(db *gorm.DB, d amqp.Delivery) {
 	switch d.RoutingKey {
+	case RKPersistData:
+		var p services.UploadPayload
+		if err := json.Unmarshal(d.Body, &p); err != nil {
+			log.Printf("invalid persist payload: %v", err)
+			d.Nack(false, false)
+			return
+		}
+		err := services.PostData(db, p)
+		if err == nil {
+			if pubErr := PublishPersistAndCalculate(p); pubErr != nil {
+				log.Printf("failed to forward to stats service: %v", pubErr)
+			}
+		}
+		reply(d, map[string]string{"status": "ok"}, err)
+
 	case RKGetCourses:
 		var p struct {
 			StudentID string `json:"student_id"`
@@ -93,8 +120,10 @@ func handleMessage(db *gorm.DB, d amqp.Delivery) {
 	}
 }
 
-// reply sends the encoded response back to the ReplyTo queue using the same
-// correlation ID so the caller can match it to the request.
+// reply marshals the result (or an error) and publishes it to the queue
+// specified in the incoming message's ReplyTo field. It acknowledges or rejects
+// the original delivery based on whether the handler returned an error.
+
 func reply(d amqp.Delivery, data interface{}, err error) {
 	if d.ReplyTo == "" {
 		if err == nil {

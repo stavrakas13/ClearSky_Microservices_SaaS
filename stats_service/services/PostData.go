@@ -1,57 +1,52 @@
 package services
 
+// Helper used by the RabbitMQ consumer to persist incoming exam data.
+
 import (
 	"fmt"
 	"log"
-	"net/http"
 	"stats_service/models"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-type uploadPayload struct {
-	Exam   models.Exam    `json:"exam" binding:"required"`
-	Grades []models.Grade `json:"grades" binding:"required,dive"`
+// UploadPayload mirrors the JSON structure sent over RabbitMQ for persisting
+// exam information and related grades.
+type UploadPayload struct {
+	Exam   models.Exam    `json:"exam"`
+	Grades []models.Grade `json:"grades"`
 }
 
-func PostData(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var p uploadPayload
-		if err := c.ShouldBindJSON(&p); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
+// PostData stores exam metadata and grade entries inside the database. It is
+// invoked by the RabbitMQ consumer rather than via a REST endpoint.
+func PostData(db *gorm.DB, p UploadPayload) error {
 
-		// Upsert στο exams
+	// Upsert στο exams
+	if err := db.
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "class_id"}, {Name: "exam_date"}},
+			DoUpdates: clause.AssignmentColumns([]string{"uni_id", "teacher_id", "mark_scale", "weights"}),
+		}).
+		Create(&p.Exam).Error; err != nil {
+		return fmt.Errorf("failed to upsert exam: %w", err)
+	}
+
+	// Εισαγωγή / upsert για κάθε Grade
+	for _, g := range p.Grades {
+		// Υπολογισμός total_score
+		g.TotalScore = CalculateTotalGrade(g.QuestionScores, p.Exam.Weights, models.MarkScale(p.Exam.MarkScale))
 		if err := db.
 			Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "class_id"}, {Name: "exam_date"}},
-				DoUpdates: clause.AssignmentColumns([]string{"uni_id", "teacher_id", "mark_scale", "weights"}),
+				Columns:   []clause.Column{{Name: "class_id"}, {Name: "exam_date"}, {Name: "student_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"question_scores", "total_score"}),
 			}).
-			Create(&p.Exam).Error; err != nil {
-			/*c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return*/
-			return fmt.Errorf("failed to upsert exam: %w", err)
+			Create(&g).Error; err != nil {
+			return fmt.Errorf("failed to upsert grade for student %s: %w", g.StudentID, err)
 		}
+	}
 
-		// Εισαγωγή / upsert για κάθε Grade
-		for _, g := range p.Grades {
-			// Υπολογισμός total_score
-			g.TotalScore = CalculateTotalGrade(g.QuestionScores, p.Exam.Weights, models.MarkScale(p.Exam.MarkScale))
-			if err := db.
-				Clauses(clause.OnConflict{
-					Columns:   []clause.Column{{Name: "class_id"}, {Name: "exam_date"}, {Name: "student_id"}},
-					DoUpdates: clause.AssignmentColumns([]string{"question_scores", "total_score"}),
-				}).
-				Create(&g).Error; err != nil {
-				/*c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return*/
-				return fmt.Errorf("failed to upsert grade for student %s: %w", g.StudentID, err)
-			}
-		}
+	log.Println("INFO: exam and grades successfully stored")
+	return nil
 
-		c.JSON(http.StatusOK, gin.H{"message": "✅ Εισαγωγή επιτυχής"})
-        }
 }

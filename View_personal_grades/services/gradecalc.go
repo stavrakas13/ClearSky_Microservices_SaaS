@@ -1,5 +1,7 @@
 package services
 
+// Helper functions for calculating grades based on question scores and weights.
+
 import (
 	"View_personal_grades/models"
 )

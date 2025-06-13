@@ -1,5 +1,9 @@
 package handlers
 
+// RabbitMQ handlers for interacting with the stats service. These functions
+// publish exam data or request computed statistics and serve the HTTP endpoints
+// `/stats/persist` and `/stats/distributions` respectively.
+
 import (
 	"context"
 	"encoding/json"
@@ -11,8 +15,12 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// HandlePersistAndCalculate publishes exam and grade data so the stats service
-// can store them and compute distributions. It does not wait for a reply.
+// HandlePersistAndCalculate accepts arbitrary JSON describing an exam and the
+// associated grades. The payload is forwarded to RabbitMQ on the
+// `stats.persist_and_calculate` routing key. The stats service will persist the
+// data and perform any heavy calculations asynchronously. This endpoint returns
+// immediately without waiting for a response.
+
 func HandlePersistAndCalculate(c *gin.Context, ch *amqp.Channel) {
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -40,8 +48,10 @@ type DistributionRequest struct {
 	ExamDate string `json:"exam_date"`
 }
 
-// HandleGetDistributions requests pre-calculated grade distributions from the
-// stats service and returns them to the caller.
+// HandleGetDistributions asks the stats service for previously computed grade
+// distributions. It uses a temporary reply queue and waits up to five seconds
+// for the service to respond.
+
 func HandleGetDistributions(c *gin.Context, ch *amqp.Channel) {
 	var req DistributionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

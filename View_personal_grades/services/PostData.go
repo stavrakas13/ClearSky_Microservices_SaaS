@@ -1,57 +1,68 @@
 package services
 
+// Logic for storing exam information and grades when messages arrive from
+// RabbitMQ.
+
 import (
-	"net/http"
+	"errors"
 
 	"View_personal_grades/models"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
-type uploadPayload struct {
-	Exam   models.Exam    `json:"exam" binding:"required"`
-	Grades []models.Grade `json:"grades" binding:"required,dive"`
+// UploadPayload mirrors the JSON body sent over RabbitMQ.
+type UploadPayload struct {
+	Exam   models.Exam    `json:"exam"`
+	Grades []models.Grade `json:"grades"`
 }
 
-// PostData returns a Gin handler that inserts exam metadata and grades into the
-// database, creating or updating records as needed.
-func PostData(db *gorm.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var p uploadPayload
-		if err := c.ShouldBindJSON(&p); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+// PostData inserts exam metadata and grades into the DB. It is called by the
+// RabbitMQ consumer rather than exposed as an HTTP endpoint.
+func PostData(db *gorm.DB, p UploadPayload) error {
+	var existingExam models.Exam
+	err := db.Where("class_id = ? AND exam_date = ?", p.Exam.ClassID, p.Exam.ExamDate).First(&existingExam).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := db.Create(&p.Exam).Error; err != nil {
+				return err
+			}
+		} else {
+			return err
 		}
-
-		// Upsert στο exams
-		if err := db.
-			Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "class_id"}, {Name: "exam_date"}},
-				DoUpdates: clause.AssignmentColumns([]string{"uni_id", "teacher_id", "mark_scale", "weights"}),
-			}).
-			Create(&p.Exam).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+	} else {
+		if err := db.Model(&existingExam).Updates(map[string]interface{}{
+			"uni_id":     p.Exam.UniID,
+			"teacher_id": p.Exam.TeacherID,
+			"mark_scale": p.Exam.MarkScale,
+			"weights":    p.Exam.Weights,
+		}).Error; err != nil {
+			return err
 		}
+	}
 
-		// Εισαγωγή / upsert για κάθε Grade
-		for _, g := range p.Grades {
-			// Υπολογισμός total_score
-			g.TotalScore = CalculateTotalGrade(g.QuestionScores, p.Exam.Weights, models.MarkScale(p.Exam.MarkScale))
+	for _, g := range p.Grades {
+		g.TotalScore = CalculateTotalGrade(g.QuestionScores, p.Exam.Weights, models.MarkScale(p.Exam.MarkScale))
 
-			if err := db.
-				Clauses(clause.OnConflict{
-					Columns:   []clause.Column{{Name: "class_id"}, {Name: "exam_date"}, {Name: "student_id"}},
-					DoUpdates: clause.AssignmentColumns([]string{"question_scores", "total_score"}),
-				}).
-				Create(&g).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
+		var existingGrade models.Grade
+		err := db.Where("class_id = ? AND exam_date = ? AND student_id = ?", g.ClassID, g.ExamDate, g.StudentID).First(&existingGrade).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if err := db.Create(&g).Error; err != nil {
+					return err
+				}
+			} else {
+				return err
+			}
+		} else {
+			if err := db.Model(&existingGrade).Updates(map[string]interface{}{
+				"question_scores": g.QuestionScores,
+				"total_score":     g.TotalScore,
+			}).Error; err != nil {
+				return err
 			}
 		}
-
-		c.JSON(http.StatusOK, gin.H{"message": "✅ Εισαγωγή επιτυχής"})
 	}
+
+	return nil
 }
