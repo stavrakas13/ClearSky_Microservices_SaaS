@@ -5,12 +5,13 @@
   <main class="container">
     <%- include('../partials/header') %>
     <h1>Student Dashboard</h1>
-    <ul>
-      <li><a class="button" href="/student/statistics">1. View course statistics</a></li>
-      <li><a class="button" href="/student/my-courses">2. My courses</a></li>
-      <li><a class="button" href="/student/request">3. Grade review request</a></li>
-      <li><a class="button" href="/student/status">4. Review request status</a></li>
-      <li><a class="button" href="/student/personal">5. View personal grades</a></li>
-    </ul>
+    <div class="dashboard-grid mt-2">
+      <a href="/student/statistics" class="card button-link">1. View course statistics</a>
+      <a href="/student/my-courses" class="card button-link">2. My courses</a>
+      <a href="/student/request"    class="card button-link">3. Grade review request</a>
+      <a href="/student/status"     class="card button-link">4. Review request status</a>
+      <a href="/student/personal"   class="card button-link">5. View personal grades</a>
+    </div>
+
   </main>
 </body></html>

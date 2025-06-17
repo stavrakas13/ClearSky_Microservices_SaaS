@@ -1,8 +1,8 @@
 <!DOCTYPE html><html lang="en"><head>
   <%- include('partials/head',{title}) %>
 </head><body>
-  <%- include('partials/navbar',{user}) %>
-  <main class="container" style="max-width:380px">
+  <%- include('partials/navbar' ) %>
+  <main class="login-container">
     <%- include('partials/header') %>
     <fieldset><legend>Welcome to clearSKY</legend>
       <form action="/login" method="post">

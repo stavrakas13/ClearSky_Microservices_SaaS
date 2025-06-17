@@ -1,69 +1,172 @@
-* { margin:0; padding:0; box-sizing:border-box; }
+/* 0) Make every element use border-box */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* 1) Full-width reset */
+html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 body {
-  font-family:Arial,sans-serif;
-  background:#f5f7fa;
-  color:#333;
-  min-height:100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: Arial, sans-serif;
+  background: var(--bg);
+  color: #333;
+  min-height: 100vh;
 }
+
+/* 2) CSS variables */
+:root {
+  --primary:       #006dd0;
+  --primary-dark:  #004c97;
+  --secondary:     #69727d;
+  --bg:            #f5f7fa;
+  --card-bg:       #fff;
+  --radius:        0.5rem;
+  --gap:           1rem;
+}
+
+/* 1) Fluid full-width container without overflow */
 .container {
-  max-width:960px;
-  margin:2rem auto;
-  padding:0 1rem;
+  width: 100%;         /* fill the viewport */
+  max-width: 100%;     /* never exceed it */
+  margin: 0;           /* drop any auto-margins */
+  padding: 1rem 2rem;  /* internal gutters */
 }
-nav {
-  background:#004c97;
-  color:#fff;
-  display:flex;
-  justify-content:space-between;
-  padding:0.75rem 1rem;
+
+/* Login page wrapper (only on /login) */
+.login-container {
+  width: 100%;
+  max-width: 380px;            /* constrain form width */
+  margin: auto;                /* center horizontally & vertically */
+  min-height: calc(100vh - 70px); /* push below the sticky navbar */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;     /* vertical centering */
+  padding: 1rem;
+  box-sizing: border-box;
 }
-nav a { color:#fff; text-decoration:none; margin-left:1rem; }
+
+
+
+/* 4) Card component */
+.card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  padding: 1.5rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* 5) Dashboard grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--gap);
+}
+
+/* 6) Button-link for cards */
+.button-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: inherit;
+  height: 100px;
+  font-weight: 600;
+}
+
+/* 7) Sticky full-width navbar */
+nav.navbar, nav {
+  background: var(--primary-dark);
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 100;
+}
+nav a { 
+  color: #fff; 
+  text-decoration: none; 
+  margin-left: 1rem; 
+}
+
+/* 8) Primary buttons (you can keep your old .button if you want, but update colors) */
 .button {
-  background:#006dd0;
-  color:#fff;
-  padding:0.35rem 0.9rem;
-  border:none;
-  border-radius:4px;
-  text-decoration:none;
-  cursor:pointer;
+  background: var(--primary);
+  color: #fff;
+  padding: 0.35rem 0.9rem;
+  border: none;
+  border-radius: 4px;
+  text-decoration: none;
+  cursor: pointer;
 }
-.button--secondary { background:#69727d; }
+.button--secondary { 
+  background: var(--secondary); 
+}
+
+/* 9) Utilities */
+.mt-2 { margin-top: 2rem; }
+
+/* 10) Keep the rest of your existing styles unchanged */
 table {
-  width:100%;
-  border-collapse:collapse;
-  margin:1rem 0;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
 }
 th, td {
-  border:1px solid #d0d7de;
-  padding:0.45rem;
-  text-align:left;
+  border: 1px solid #d0d7de;
+  padding: 0.45rem;
+  text-align: left;
 }
-th { background:#ebf1f8; }
+th { background: #ebf1f8; }
+
 fieldset {
-  border:1px solid #c2c5c9;
-  padding:1rem;
-  margin-bottom:1rem;
+  border: 1px solid #c2c5c9;
+  padding: 1rem;
+  margin-bottom: 1rem;
 }
-legend { font-weight:bold; }
+legend { font-weight: bold; }
+
 .panel {
-  border:1px solid #c2c5c9;
-  margin:1rem 0;
+  border: 1px solid #c2c5c9;
+  margin: 1rem 0;
 }
 .panel-header {
-  background:#e6e7ea;
-  padding:0.45rem 0.6rem;
-  font-weight:bold;
+  background: #e6e7ea;
+  padding: 0.45rem 0.6rem;
+  font-weight: bold;
 }
+
 .form-group {
-  margin-bottom:0.6rem;
+  margin-bottom: 0.6rem;
 }
 label {
-  display:block;
-  margin-bottom:0.25rem;
+  display: block;
+  margin-bottom: 0.25rem;
 }
 input, select, textarea {
-  width:100%;
-  padding:0.45rem;
-  border:1px solid #ccd1d6;
-  border-radius:4px;
+  width: 100%;
+  padding: 0.45rem;
+  border: 1px solid #ccd1d6;
+  border-radius: 4px;
 }
+
+/* If you have additional .navbar__* rules, leave them intact below */
+.navbar__brand a { color: #fff; font-weight: 600; text-decoration: none; font-size: 1.2rem }
+.navbar__links { display: flex; gap: 1.1rem; list-style: none; margin: 0; padding: 0 }
+.navbar__links a { color: #fff; text-decoration: none }
+.navbar__links .active { border-bottom: 2px solid #ffeb3b }
+.navbar__auth { display: flex; align-items: center; gap: 0.8rem; }
