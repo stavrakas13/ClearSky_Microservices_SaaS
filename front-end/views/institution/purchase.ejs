@@ -1,23 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <%- include('../partials/head',{title})%>
+  <%- include('../partials/head',{ title }) %>
 </head>
 <body>
-  <%- include('../partials/navbar',{user}) %>
+  <%- include('../partials/navbar',{ user }) %>
   <main class="container">
     <%- include('../partials/header') %>
-    <fieldset><legend>Buy credits</legend>
-      <!-- give the form an ID and remove the old `action` -->
+    <fieldset class="purchase-panel">
+      <legend>Buy credits</legend>
       <form id="purchase-form">
-        <input type="number" name="amount" min="1" required style="width:120px;"/>
-        <button class="button" type="submit">Buy</button>
+        <div class="purchase-row">
+          <div class="form-group">
+            <label for="inst-name">Institution:</label>
+            <select id="inst-name" name="instName" required>
+              <option value="NTUA">NTUA</option>
+              <option value="EKPA">EKPA</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="amount">Amount:</label>
+            <input id="amount" type="number" name="amount" min="1" required/>
+          </div>
+          <div class="form-group form-group--button">
+            <button class="button" type="submit">Buy</button>
+          </div>
+        </div>
       </form>
     </fieldset>
     <%- include('../partials/messageBox') %>
   </main>
 
-  <!-- wire up the correct script -->
   <script type="module" src="/js/institution/purchase.js"></script>
 </body>
 </html>

@@ -1,4 +1,3 @@
-// app.js  (front-end root)
 import express                     from 'express';
 import session                     from 'express-session';
 import bodyParser                  from 'body-parser';
@@ -10,7 +9,7 @@ import morgan                      from 'morgan';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app       = express();
 
-/* 1) Middleware ----------------------------------------------------------- */
+// 1) Middleware
 app.use(morgan('dev'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -26,7 +25,7 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'public')));
 
-/* 2) Proxy only /api/* → Go backend --------------------------------------- */
+// 2) Proxy only /api/* → Go backend
 const API_TARGET = process.env.GO_API_URL || 'http://localhost:3001';
 
 app.use(
@@ -48,11 +47,11 @@ app.use(
   })
 );
 
-/* 3) EJS setup ------------------------------------------------------------ */
+// 3) EJS setup
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-/* 4) Page routes ---------------------------------------------------------- */
+// 4) Page routes
 function auth(role) {
   return (req, res, next) => {
     if (!req.session.user) return res.redirect('/login');
@@ -67,6 +66,14 @@ const users = { alice: 'student', bob: 'instructor', iris: 'institution' };
 app.get('/', (req, res) => {
   if (!req.session.user) return res.redirect('/login');
   return res.redirect(`/${req.session.user.role}`);
+});
+
+// Public sign-up page
+app.get('/signup', (req, res) => {
+  res.render('institution/userManagement', {
+    user : null,
+    title: 'Sign Up',
+  });
 });
 
 app.get('/login', (req, res) =>
@@ -89,25 +96,23 @@ app.get('/logout', (req, res) =>
   req.session.destroy(() => res.redirect('/login'))
 );
 
-/* Student pages */
+// Student pages
 app.get('/student',            auth('student'), (r, s) => s.render('student/dashboard',      { user: r.session.user, title: 'Dashboard' }));
 app.get('/student/statistics', auth('student'), (r, s) => s.render('student/statistics',     { user: r.session.user, title: 'Statistics' }));
 app.get('/student/my-courses', auth('student'), (r, s) => s.render('student/myCourses',      { user: r.session.user, title: 'My Courses' }));
 app.get('/student/request',    auth('student'), (r, s) => s.render('student/reviewRequest',  { user: r.session.user, title: 'Review Request' }));
 app.get('/student/status',     auth('student'), (r, s) => s.render('student/reviewStatus',   { user: r.session.user, title: 'Review Status' }));
 app.get('/student/personal',   auth('student'), (r, s) => s.render('student/personal',       { user: r.session.user, title: 'Personal Grades' }));
-app.get('/student/statistics', auth('student'), (r, s) => s.render('student/statistics',     { user: r.session.user, title: 'Statistics' }));
 
-/* Instructor pages */
+// Instructor pages
 app.get('/instructor',             auth('instructor'), (r, s) => s.render('instructor/dashboard',   { user: r.session.user, title: 'Dashboard' }));
 app.get('/instructor/post-initial',auth('instructor'), (r, s) => s.render('instructor/postInitial', { user: r.session.user, title: 'Post Initial' }));
 app.get('/instructor/post-final',  auth('instructor'), (r, s) => s.render('instructor/postFinal',   { user: r.session.user, title: 'Post Final' }));
 app.get('/instructor/review-list', auth('instructor'), (r, s) => s.render('instructor/reviewList',  { user: r.session.user, title: 'Review Requests' }));
 
-// Updated reply route: pass all needed template vars
+// Reply form with template variables
 app.get('/instructor/reply', auth('instructor'), (req, res) => {
   const request_id = req.query.req || '';
-  // In production fetch these details instead of hard-coding:
   res.render('instructor/replyForm', {
     user          : req.session.user,
     title         : 'Reply to Review Request',
@@ -120,13 +125,13 @@ app.get('/instructor/reply', auth('instructor'), (req, res) => {
 
 app.get('/instructor/statistics', auth('instructor'), (r, s) => s.render('instructor/statistics',  { user: r.session.user, title: 'Statistics' }));
 
-/* Institution pages */
+// Institution pages
 app.get('/institution',                auth('institution'), (r, s) => s.render('institution/dashboard',       { user: r.session.user, title: 'Dashboard' }));
 app.get('/institution/register',       auth('institution'), (r, s) => s.render('institution/register',        { user: r.session.user, title: 'Register' }));
 app.get('/institution/purchase',       auth('institution'), (r, s) => s.render('institution/purchase',        { user: r.session.user, title: 'Purchase' }));
 app.get('/institution/user-management',auth('institution'), (r, s) => s.render('institution/userManagement', { user: r.session.user, title: 'Users' }));
 app.get('/institution/statistics',     auth('institution'), (r, s) => s.render('institution/statistics',      { user: r.session.user, title: 'Statistics' }));
 
-/* 5) Start server --------------------------------------------------------- */
+// 5) Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`✔ Front-end listening on http://localhost:${PORT}`));
