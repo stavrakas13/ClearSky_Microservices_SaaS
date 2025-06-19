@@ -1,13 +1,23 @@
-<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head',{title})%>
+</head>
+<body>
   <%- include('../partials/navbar',{user}) %>
   <main class="container">
     <%- include('../partials/header') %>
     <fieldset><legend>Buy credits</legend>
-      <form action="/api/credits" method="post">
+      <!-- give the form an ID and remove the old `action` -->
+      <form id="purchase-form">
         <input type="number" name="amount" min="1" required style="width:120px;"/>
-        <button class="button">Buy</button>
+        <button class="button" type="submit">Buy</button>
       </form>
     </fieldset>
     <%- include('../partials/messageBox') %>
   </main>
-</body></html>
+
+  <!-- wire up the correct script -->
+  <script type="module" src="/js/institution/purchase.js"></script>
+</body>
+</html>

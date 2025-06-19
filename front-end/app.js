@@ -1,27 +1,19 @@
+// app.js
 import express from "express";
 import session from "express-session";
 import bodyParser from "body-parser";
 import path from "path";
 import { fileURLToPath } from "url";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-// after your session/auth middleware
-app.use((req, res, next) => {
-  res.locals.user       = req.user || null;
-  res.locals.currentUrl = req.originalUrl;
-  next();
-});
-
-
-// view engine
-app.set("view engine", "ejs");
-app.set("views", path.join(__dirname, "views"));
-
-// static & parsers
-app.use(express.static(path.join(__dirname, "public")));
+// 1) JSON + URL-encoded parsers (so fetch(..., { body: JSON.stringify(...) }) works)
+app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
+
+// 2) Session for your EJS pages
 app.use(
   session({
     secret: "change-this-secret",
@@ -29,11 +21,58 @@ app.use(
     saveUninitialized: true,
   })
 );
+
+// 3) Expose user + currentUrl to your templates
+app.use((req, res, next) => {
+  res.locals.user       = req.session.user || null;
+  res.locals.currentUrl = req.originalUrl;
+  next();
+});
+
+// 4) Serve static assets (public/js, styles.css, etc)
+app.use(express.static(path.join(__dirname, "public")));
+
+// 5) Proxy *only* your API endpoints to the Go backend
+const API_TARGET = process.env.GO_API_URL || "http://localhost:3001";
+const apiPaths = [
+  "/purchase",
+  "/mycredits",
+  "/spending",
+  "/registration",
+  "/upload_init",
+  "/stats/persist",
+  "/stats/distributions",
+  "/personal/courses",
+  "/personal/grades",
+  "/student/reviewRequest",
+  "/student/status",
+  "/instructor/review-list",
+  "/instructor/reply",
+  "/user/register",
+  "/user/login",
+  "/user/delete",
+  "/user/google-login",
+];
+app.use(
+  apiPaths,
+  createProxyMiddleware({
+    target: API_TARGET,
+    changeOrigin: true,
+    logLevel: "warn",
+  })
+);
+
+// 6) EJS view engine setup
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+
+// --- Your existing page routes follow: ---
+
 // Public sign-up page
 app.get("/signup", (req, res) =>
   res.render("institution/userManagement", {
     user: null,
-    title: "Sign Up"
+    title: "Sign Up",
   })
 );
 
@@ -136,6 +175,5 @@ app.get("/institution/statistics", auth("institution"), (r, s) =>
 );
 
 // start server
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`✔ http://localhost:${PORT}`));
-
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✔ Front-end server listening on http://localhost:${PORT}`));
