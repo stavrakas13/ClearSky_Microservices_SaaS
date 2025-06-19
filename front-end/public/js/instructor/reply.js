@@ -1,18 +1,22 @@
-// instructor/reply.js
+// public/js/instructor/reply.js
+
 import { flash } from '../../script.js';
 import { postInstructorReply } from '../../api/instructor.js';
 
-const form = document.querySelector('form[action="/api/appeals/reply"]');
+// Now matching action="/api/instructor/reply"
+const form = document.querySelector('form[action="/api/instructor/reply"]');
 
 form.addEventListener('submit', async e => {
   e.preventDefault();
+
+  // grab the request ID from the querystring
   const params = new URLSearchParams(location.search);
-  const reqId = params.get('req');
+  const reqId  = params.get('req');
 
-  const course_id   = 'software II';
-  const exam_period = 'spring 2025';
-  const user_id     = reqId;
-
+  // you can also pull these from hidden inputs if you prefer
+  const course_id               = 'software II';
+  const exam_period             = 'spring 2025';
+  const user_id                 = reqId;
   const instructor_reply_message = form.message.value.trim();
   const instructor_action        = form.decision.value;
 

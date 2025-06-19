@@ -7,63 +7,36 @@
   <%- include('../partials/navbar', { user }) %>
   <main class="container">
     <%- include('../partials/header') %>
+    <h2>Student: <%= user.username %></h2>
 
-    <h2>Student name, email</h2>
     <table>
       <thead>
         <tr>
-          <th>course name</th>
-          <th>exam period</th>
-          <th>grading status</th>
-          <th>action</th>
+          <th>Course Name</th>
+          <th>Exam Period</th>
+          <th>Grading Status</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>
-        <tr style="background:#e6e7ea;">
-          <td>physics</td>
-          <td>spring 2025</td>
-          <td>open</td>
-          <td>
-            <a href="/student/personal"       class="button">View my grades</a>
-            <a href="/student/request"        class="button">Ask for review</a>
-            <a href="/student/status"         class="button button--secondary">View review status</a>
-          </td>
-        </tr>
-        <tr>
-          <td>software</td>
-          <td>fall 2024</td>
-          <td>closed</td>
-          <td>
-            <a href="/student/personal"       class="button">View my grades</a>
-            <a href="/student/request"        class="button button--secondary">Ask for review</a>
-            <a href="/student/status"         class="button">View review status</a>
-          </td>
-        </tr>
-        <tr>
-          <td>mathematics</td>
-          <td>fall 2024</td>
-          <td>closed</td>
-          <td>
-            <a href="/student/personal"       class="button">View my grades</a>
-            <a href="/student/request"        class="button button--secondary">Ask for review</a>
-            <a href="/student/status"         class="button button--secondary">View review status</a>
-          </td>
-        </tr>
+        <!-- Populated by JS -->
       </tbody>
     </table>
 
     <div class="panel">
-      <div class="panel-header">NEW REVIEW REQUEST  physics – spring 2025</div>
-      <form action="/api/appeals" method="post">
+      <div class="panel-header">NEW REVIEW REQUEST</div>
+      <form id="student-review-request-form">
         <div class="form-group">
           <label>Message to instructor</label>
           <textarea name="message" style="width:100%;height:120px;"
-            placeholder="please review my grade. I deserve something higher!!!"></textarea>
+            placeholder="please review my grade..."></textarea>
         </div>
-        <button class="button" style="float:right;margin-top:0.6rem;">Submit grade review request</button>
+        <button class="button" type="submit" style="float:right;">Submit</button>
         <div style="clear:both;"></div>
       </form>
     </div>
   </main>
+
+  <script type="module" src="/js/student/review-request.js"></script>
 </body>
 </html>

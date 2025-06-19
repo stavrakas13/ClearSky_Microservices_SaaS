@@ -11,27 +11,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app       = express();
 
 /* 1) Middleware ----------------------------------------------------------- */
-app.use(morgan('dev'));  // request logger
-
+app.use(morgan('dev'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
-
 app.use(session({
   secret           : 'change-this-secret',
   resave           : false,
   saveUninitialized: true,
 }));
-
 app.use((req, res, next) => {
   res.locals.user       = req.session.user || null;
   res.locals.currentUrl = req.originalUrl;
   next();
 });
-
 app.use(express.static(path.join(__dirname, 'public')));
 
 /* 2) Proxy only /api/* → Go backend --------------------------------------- */
-const API_TARGET = process.env.GO_API_URL || 'http://localhost:8080';
+const API_TARGET = process.env.GO_API_URL || 'http://localhost:3001';
 
 app.use(
   '/api',
@@ -94,27 +90,42 @@ app.get('/logout', (req, res) =>
 );
 
 /* Student pages */
-app.get('/student',           auth('student'),  (r, s) => s.render('student/dashboard',      { user: r.session.user, title: 'Dashboard' }));
-app.get('/student/statistics',auth('student'),  (r, s) => s.render('student/statistics',     { user: r.session.user, title: 'Statistics' }));
-app.get('/student/my-courses',auth('student'),  (r, s) => s.render('student/myCourses',      { user: r.session.user, title: 'My Courses' }));
-app.get('/student/request',   auth('student'),  (r, s) => s.render('student/reviewRequest',  { user: r.session.user, title: 'Review Request' }));
-app.get('/student/status',    auth('student'),  (r, s) => s.render('student/reviewStatus',   { user: r.session.user, title: 'Review Status' }));
-app.get('/student/personal',  auth('student'),  (r, s) => s.render('student/personal',       { user: r.session.user, title: 'Personal Grades' }));
+app.get('/student',            auth('student'), (r, s) => s.render('student/dashboard',      { user: r.session.user, title: 'Dashboard' }));
+app.get('/student/statistics', auth('student'), (r, s) => s.render('student/statistics',     { user: r.session.user, title: 'Statistics' }));
+app.get('/student/my-courses', auth('student'), (r, s) => s.render('student/myCourses',      { user: r.session.user, title: 'My Courses' }));
+app.get('/student/request',    auth('student'), (r, s) => s.render('student/reviewRequest',  { user: r.session.user, title: 'Review Request' }));
+app.get('/student/status',     auth('student'), (r, s) => s.render('student/reviewStatus',   { user: r.session.user, title: 'Review Status' }));
+app.get('/student/personal',   auth('student'), (r, s) => s.render('student/personal',       { user: r.session.user, title: 'Personal Grades' }));
+app.get('/student/statistics', auth('student'), (r, s) => s.render('student/statistics',     { user: r.session.user, title: 'Statistics' }));
 
 /* Instructor pages */
 app.get('/instructor',             auth('instructor'), (r, s) => s.render('instructor/dashboard',   { user: r.session.user, title: 'Dashboard' }));
 app.get('/instructor/post-initial',auth('instructor'), (r, s) => s.render('instructor/postInitial', { user: r.session.user, title: 'Post Initial' }));
-app.get('/instructor/review-list', auth('instructor'), (r, s) => s.render('instructor/reviewList',  { user: r.session.user, title: 'Review List' }));
-app.get('/instructor/reply',       auth('instructor'), (r, s) => s.render('instructor/replyForm',   { user: r.session.user, title: 'Reply Form' }));
 app.get('/instructor/post-final',  auth('instructor'), (r, s) => s.render('instructor/postFinal',   { user: r.session.user, title: 'Post Final' }));
-app.get('/instructor/statistics',  auth('instructor'), (r, s) => s.render('instructor/statistics',  { user: r.session.user, title: 'Statistics' }));
+app.get('/instructor/review-list', auth('instructor'), (r, s) => s.render('instructor/reviewList',  { user: r.session.user, title: 'Review Requests' }));
+
+// Updated reply route: pass all needed template vars
+app.get('/instructor/reply', auth('instructor'), (req, res) => {
+  const request_id = req.query.req || '';
+  // In production fetch these details instead of hard-coding:
+  res.render('instructor/replyForm', {
+    user          : req.session.user,
+    title         : 'Reply to Review Request',
+    request_id,
+    course_name   : 'software II',
+    exam_period   : 'spring 2025',
+    student_name  : 'john doe',
+  });
+});
+
+app.get('/instructor/statistics', auth('instructor'), (r, s) => s.render('instructor/statistics',  { user: r.session.user, title: 'Statistics' }));
 
 /* Institution pages */
-app.get('/institution',              auth('institution'), (r, s) => s.render('institution/dashboard',       { user: r.session.user, title: 'Dashboard' }));
-app.get('/institution/register',     auth('institution'), (r, s) => s.render('institution/register',        { user: r.session.user, title: 'Register' }));
-app.get('/institution/purchase',     auth('institution'), (r, s) => s.render('institution/purchase',        { user: r.session.user, title: 'Purchase' }));
-app.get('/institution/user-management', auth('institution'), (r, s) => s.render('institution/userManagement', { user: r.session.user, title: 'Users' }));
-app.get('/institution/statistics',   auth('institution'), (r, s) => s.render('institution/statistics',      { user: r.session.user, title: 'Statistics' }));
+app.get('/institution',                auth('institution'), (r, s) => s.render('institution/dashboard',       { user: r.session.user, title: 'Dashboard' }));
+app.get('/institution/register',       auth('institution'), (r, s) => s.render('institution/register',        { user: r.session.user, title: 'Register' }));
+app.get('/institution/purchase',       auth('institution'), (r, s) => s.render('institution/purchase',        { user: r.session.user, title: 'Purchase' }));
+app.get('/institution/user-management',auth('institution'), (r, s) => s.render('institution/userManagement', { user: r.session.user, title: 'Users' }));
+app.get('/institution/statistics',     auth('institution'), (r, s) => s.render('institution/statistics',      { user: r.session.user, title: 'Statistics' }));
 
 /* 5) Start server --------------------------------------------------------- */
 const PORT = process.env.PORT || 3000;

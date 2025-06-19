@@ -7,58 +7,25 @@
   <%- include('../partials/navbar', { user }) %>
   <main class="container">
     <%- include('../partials/header') %>
-
-    <h2>Student name, email</h2>
+    <h2>Student: <%= user.username %></h2>
 
     <table>
       <thead>
         <tr>
-          <th>course name</th>
-          <th>exam period</th>
-          <th>grading status</th>
-          <th>action</th>
+          <th>Course Name</th>
+          <th>Exam Period</th>
+          <th>Grading Status</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>
-        <!-- Row 1: physics (selected) -->
-        <tr style="background:#e6e7ea;">
-          <td>physics</td>
-          <td>spring 2025</td>
-          <td>open</td>
-          <td>
-            <a href="/student/personal"       class="button">View my grades</a>
-            <a href="/student/request"        class="button">Ask for review</a>
-            <a href="/student/status"         class="button button--secondary">View review status</a>
-          </td>
-        </tr>
-
-        <!-- Row 2: software (closed) -->
-        <tr>
-          <td>software</td>
-          <td>fall 2024</td>
-          <td>closed</td>
-          <td>
-            <a href="/student/personal"       class="button">View my grades</a>
-            <a href="/student/request"        class="button button--secondary">Ask for review</a>
-            <a href="/student/status"         class="button">View review status</a>
-          </td>
-        </tr>
-
-        <!-- Row 3: mathematics (closed, no review requested) -->
-        <tr>
-          <td>mathematics</td>
-          <td>fall 2024</td>
-          <td>closed</td>
-          <td>
-            <a href="/student/personal"       class="button">View my grades</a>
-            <a href="/student/request"        class="button button--secondary">Ask for review</a>
-            <a href="/student/status"         class="button button--secondary">View review status</a>
-          </td>
-        </tr>
+        <!-- Populated by JS -->
       </tbody>
     </table>
 
     <%- include('../partials/messageBox') %>
   </main>
+
+  <script type="module" src="/js/student/my-courses.js"></script>
 </body>
 </html>

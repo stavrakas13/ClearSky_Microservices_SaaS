@@ -1,19 +1,29 @@
-<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
-  <%- include('../partials/navbar',{user}) %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Review Requests' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
   <main class="container">
     <%- include('../partials/header') %>
-    <h2>Instructor name</h2>
+    <h2>Instructor: <%= user.username %></h2>
 
     <table>
-      <thead><tr><th>course name</th><th>exam period</th><th>student</th><th>action</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Course Name</th>
+          <th>Exam Period</th>
+          <th>Student</th>
+          <th>Action</th>
+        </tr>
+      </thead>
       <tbody>
-        <tr><td>software II</td><td>spring 2025</td><td>john doe</td>
-            <td><a class="button" href="/instructor/reply">Reply</a></td></tr>
-        <tr><td>software II</td><td>spring 2025</td><td>jane doe</td>
-            <td><a class="button" href="#">Reply</a></td></tr>
-        <tr><td>software I</td><td>fall 2024</td><td>george smith</td>
-            <td><a class="button" href="#">Reply</a></td></tr>
+        <!-- rows will be injected here by JS -->
       </tbody>
     </table>
   </main>
-</body></html>
+
+  <script type="module" src="/js/instructor/review-list.js"></script>
+</body>
+</html>

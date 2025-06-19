@@ -1,25 +1,36 @@
-<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
-  <%- include('../partials/navbar',{user}) %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Post Initial Grades' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
   <main class="container">
     <%- include('../partials/header') %>
-    <h2>Instructor name</h2>
+    <h2>Instructor: <%= user.username %></h2>
 
     <fieldset><legend>INITIAL GRADES POSTING</legend>
-      <form action="/api/grades/upload" method="post" enctype="multipart/form-data">
-        <label>xlsx file with initial grades</label>
-        <input type="file" name="xlsx" accept=".xlsx" style="width:100%;margin:0.4rem 0;"/>
-        <button class="button" type="submit">submit initial grades</button>
+      <form id="upload-init-form" enctype="multipart/form-data">
+        <div class="form-group">
+          <label for="xlsx-init">XLSX file with initial grades</label>
+          <input id="xlsx-init" type="file" name="xlsx" accept=".xlsx"
+                 style="width:100%;margin:0.4rem 0;"/>
+        </div>
+        <button class="button" type="submit">Submit Initial Grades</button>
       </form>
     </fieldset>
 
-    <fieldset><legend>XLSX file parsing</legend>
-      <div class="form-group"><label>Course:</label><input/></div>
-      <div class="form-group"><label>Period:</label><input/></div>
-      <div class="form-group"><label>n. of grades</label><input style="width:120px"/></div>
+    <fieldset><legend>XLSX file parsing (preview)</legend>
+      <div class="form-group"><label>Course:</label><input readonly value="" /></div>
+      <div class="form-group"><label>Period:</label><input readonly value="" /></div>
+      <div class="form-group"><label>Number of grades:</label><input readonly value="" style="width:120px"/></div>
       <button class="button">CONFIRM</button>
       <button class="button button--secondary">CANCEL</button>
     </fieldset>
 
     <%- include('../partials/messageBox') %>
   </main>
-</body></html>
+
+  <script type="module" src="/js/institution/post-initial.js"></script>
+</body>
+</html>

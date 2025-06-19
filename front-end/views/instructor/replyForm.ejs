@@ -1,31 +1,53 @@
-<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
-  <%- include('../partials/navbar',{user}) %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Reply to Review Request' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
   <main class="container">
     <%- include('../partials/header') %>
-    <h2>Instructor name</h2>
+    <h2>Instructor: <%= user.username %></h2>
 
-    <table>
-      <thead><tr><th>course name</th><th>exam period</th><th>student</th><th>action</th></tr></thead>
-      <tbody><tr><td>software II</td><td>spring 2025</td><td>john doe</td><td><button class="button">Reply</button></td></tr></tbody>
-    </table>
+    <!-- Review list table above omitted for brevity -->
 
     <div class="panel">
-      <div class="panel-header">REPLY TO GRADE REVIEW REQUEST&nbsp;&nbsp;software II&nbsp;spring 2025&nbsp;john doe</div>
-      <form action="/api/appeals/reply" method="post" enctype="multipart/form-data">
+      <div class="panel-header">
+        REPLY TO GRADE REVIEW REQUEST&nbsp;&nbsp;
+        <%= course_name %>&nbsp;<%= exam_period %>&nbsp;<%= student_name %>
+      </div>
+
+      <!-- JS-driven reply form -->
+      <form id="instructor-reply-form">
+        <input type="hidden" name="req" value="<%= request_id %>" />
+
         <div class="form-group">
           <label>Action</label>
           <select name="decision" style="width:180px;">
-            <option>Total accept</option><option>Partial accept</option><option>Reject</option>
+            <option value="Total accept">Total accept</option>
+            <option value="Partial accept">Partial accept</option>
+            <option value="Reject">Reject</option>
           </select>
         </div>
+
         <div class="form-group">
-          <label>instructor's message</label>
+          <label>Instructor's message</label>
           <textarea name="message" style="width:100%;height:80px;"></textarea>
         </div>
-        <button class="button button--secondary" type="button">upload reply attachment</button>
-        <button class="button" type="submit" style="float:right;">Send</button>
+
+        <button class="button button--secondary" type="button">
+          Upload attachment
+        </button>
+        <button class="button" type="submit" style="float:right;">
+          Send Reply
+        </button>
         <div style="clear:both;"></div>
       </form>
     </div>
+
+    <%- include('../partials/messageBox') %>
   </main>
-</body></html>
+
+  <script type="module" src="/js/instructor/reply.js"></script>
+</body>
+</html>
