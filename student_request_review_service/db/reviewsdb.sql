@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS reviews;
 -- combination of student_id & course_id & exam_period UNIQUE for each review. 
 CREATE TABLE IF NOT EXISTS reviews (
   review_id SERIAL PRIMARY KEY,
-  student_id INT NOT NULL,
+  student_id VARCHAR(15) NOT NULL,
   course_id INT NOT NULL,
   exam_period VARCHAR(15) NOT NULL,
   student_message TEXT NOT NULL,

@@ -12,7 +12,7 @@ func UpdateInstructorResponse(body map[string]interface{}) (string, error) {
 	//	"body": {
 	//	  "course_id": "101",
 	//	  "exam_period": "spring 2025",
-	//	  "user_id": "42"
+	//	  "user_id": `031200000`
 	//	  "instructor_reply_message": "NO WAY!"
 	//	  "instructor_action": "Denied"
 	//	}
@@ -24,12 +24,12 @@ func UpdateInstructorResponse(body map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("missing course_id")
 	}
 
-	userID, ok := body["user_id"]
+	userID, ok := body["user_id"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing user_id")
 	}
 
-	examPeriod, ok := body["exam_period"]
+	examPeriod, ok := body["exam_period"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing exam_period")
 	}

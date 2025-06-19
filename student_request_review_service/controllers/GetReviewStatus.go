@@ -22,12 +22,12 @@ func GetReviewStatus(body map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("missing course_id")
 	}
 
-	userID, ok := body["user_id"]
+	userID, ok := body["user_id"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing user_id")
 	}
 
-	examPeriod, ok := body["exam_period"]
+	examPeriod, ok := body["exam_period"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing exam_period")
 	}

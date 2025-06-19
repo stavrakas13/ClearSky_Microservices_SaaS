@@ -57,6 +57,7 @@ services:
     build:
       context: ./student_request_review_service
       dockerfile: Dockerfile
+    restart: always
     depends_on:
       - rabbitmq
       - student_db
@@ -89,6 +90,7 @@ services:
     build:
       context: ./instructor_review_reply_service
       dockerfile: Dockerfile
+    restart: always
     depends_on:
       - rabbitmq
       - instructor_db

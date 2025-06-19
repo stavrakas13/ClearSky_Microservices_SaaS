@@ -65,7 +65,7 @@ func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
 	// receive message
 	var req struct {
 		CourseID       int    `json:"course_id"`
-		UserID         int    `json:"user_id"`
+		UserID         string `json:"user_id"`
 		StudentMessage string `json:"student_message"`
 		ExamPeriod     string `json:"exam_period"`
 	}
@@ -104,7 +104,7 @@ func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
 	// receive message
 	var req struct {
 		CourseID   int    `json:"course_id"`
-		UserID     int    `json:"user_id"`
+		UserID     string `json:"user_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -134,7 +134,7 @@ func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 	// receive message
 	var req struct {
 		CourseID               int    `json:"course_id"`
-		UserID                 int    `json:"user_id"`
+		UserID                 string `json:"user_id"`
 		ExamPeriod             string `json:"exam_period"`
 		InstructorReplyMessage string `json:"instructor_reply_message"`
 		InstructorAction       string `json:"instructor_action"`
@@ -203,7 +203,7 @@ func HandleGetRequestInfo(c *gin.Context, ch *amqp.Channel) {
 	// receive message
 	var req struct {
 		CourseID   int    `json:"course_id"`
-		UserID     int    `json:"user_id"`
+		UserID     string `json:"user_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {

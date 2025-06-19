@@ -23,16 +23,15 @@ func PostNewReviewRequest(body map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("missing or invalid course_id")
 	}
 
-	examPeriod, ok := body["exam_period"]
+	examPeriod, ok := body["exam_period"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing exam_period")
 	}
 
-	userIDFloat, ok := body["user_id"].(float64) // JSON numbers default to float64
+	userID, ok := body["user_id"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing or invalid user_id")
 	}
-	userID := int(userIDFloat)
 
 	studentMessage, ok := body["student_message"].(string)
 	if !ok {
