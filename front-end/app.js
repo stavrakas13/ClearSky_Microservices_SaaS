@@ -29,6 +29,13 @@ app.use(
     saveUninitialized: true,
   })
 );
+// Public sign-up page
+app.get("/signup", (req, res) =>
+  res.render("institution/userManagement", {
+    user: null,
+    title: "Sign Up"
+  })
+);
 
 // auth helper
 function auth(role) {

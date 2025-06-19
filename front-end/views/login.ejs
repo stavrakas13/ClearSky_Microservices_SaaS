@@ -1,6 +1,9 @@
-<!DOCTYPE html><html lang="en"><head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
   <%- include('partials/head',{title}) %>
-</head><body>
+</head>
+<body>
   <%- include('partials/navbar' ) %>
   <main class="login-container">
     <fieldset><legend>Welcome to clearSKY</legend>
@@ -13,11 +16,16 @@
         </div>
         <button class="button" type="submit">Login</button>
         <button class="button button--secondary" type="button">Login with Google</button>
-        <% if(error){%>
-          <p style="color:#c00;margin-top:1rem"><%=error%></p>
-        <% } %>
+        <a href="/signup" class="button button--secondary">Sign up</a>
+      </div>
       </form>
+
+    
+
+      <% if (error) { %>
+        <p style="color: #c00; margin-top: 1rem;"><%= error %></p>
+      <% } %>
     </fieldset>
-    <%- include('partials/messageBox') %>
   </main>
-</body></html>
+</body>
+</html>

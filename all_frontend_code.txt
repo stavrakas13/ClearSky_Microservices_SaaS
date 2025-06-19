@@ -1,0 +1,1116 @@
+===== front-end/app.js =====
+import express from "express";
+import session from "express-session";
+import bodyParser from "body-parser";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+
+// after your session/auth middleware
+app.use((req, res, next) => {
+  res.locals.user       = req.user || null;
+  res.locals.currentUrl = req.originalUrl;
+  next();
+});
+
+
+// view engine
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+
+// static & parsers
+app.use(express.static(path.join(__dirname, "public")));
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(
+  session({
+    secret: "change-this-secret",
+    resave: false,
+    saveUninitialized: true,
+  })
+);
+
+// auth helper
+function auth(role) {
+  return (req, res, next) => {
+    if (!req.session.user) return res.redirect("/login");
+    if (role && req.session.user.role !== role)
+      return res.redirect(`/${req.session.user.role}`);
+    next();
+  };
+}
+
+// mock users
+const users = { alice: "student", bob: "instructor", iris: "institution" };
+
+// root → role dashboard
+app.get("/", (req, res) => {
+  const u = req.session.user;
+  if (!u) return res.redirect("/login");
+  return res.redirect(`/${u.role}`);
+});
+
+// login
+app.get("/login", (req, res) =>
+  res.render("login", { title: "Log in", error: null, user: null })
+);
+app.post("/login", (req, res) => {
+  const { username, password } = req.body;
+  const role = users[username];
+  if (!role || password !== "1234") {
+    return res.render("login", {
+      title: "Log in",
+      error: "Invalid credentials",
+      user: null,
+    });
+  }
+  req.session.user = { username, role };
+  return res.redirect(`/${role}`);
+});
+app.get("/logout", (req, res) =>
+  req.session.destroy(() => res.redirect("/login"))
+);
+
+// student routes
+app.get("/student", auth("student"), (r, s) =>
+  s.render("student/dashboard", { user: r.session.user, title: "Dashboard" })
+);
+app.get("/student/statistics", auth("student"), (r, s) =>
+  s.render("student/statistics", { user: r.session.user, title: "Statistics" })
+);
+app.get("/student/my-courses", auth("student"), (r, s) =>
+  s.render("student/myCourses", { user: r.session.user, title: "My Courses" })
+);
+app.get("/student/request", auth("student"), (r, s) =>
+  s.render("student/reviewRequest", { user: r.session.user, title: "Review Request" })
+);
+app.get("/student/status", auth("student"), (r, s) =>
+  s.render("student/reviewStatus", { user: r.session.user, title: "Review Status" })
+);
+app.get("/student/personal", auth("student"), (r, s) =>
+  s.render("student/personal", { user: r.session.user, title: "Personal Grades" })
+);
+
+// instructor routes
+app.get("/instructor", auth("instructor"), (r, s) =>
+  s.render("instructor/dashboard", { user: r.session.user, title: "Dashboard" })
+);
+app.get("/instructor/post-initial", auth("instructor"), (r, s) =>
+  s.render("instructor/postInitial", { user: r.session.user, title: "Post Initial" })
+);
+app.get("/instructor/review-list", auth("instructor"), (r, s) =>
+  s.render("instructor/reviewList", { user: r.session.user, title: "Review List" })
+);
+app.get("/instructor/reply", auth("instructor"), (r, s) =>
+  s.render("instructor/replyForm", { user: r.session.user, title: "Reply Form" })
+);
+app.get("/instructor/post-final", auth("instructor"), (r, s) =>
+  s.render("instructor/postFinal", { user: r.session.user, title: "Post Final" })
+);
+app.get("/instructor/statistics", auth("instructor"), (r, s) =>
+  s.render("instructor/statistics", { user: r.session.user, title: "Statistics" })
+);
+
+// institution routes
+app.get("/institution", auth("institution"), (r, s) =>
+  s.render("institution/dashboard", { user: r.session.user, title: "Dashboard" })
+);
+app.get("/institution/register", auth("institution"), (r, s) =>
+  s.render("institution/register", { user: r.session.user, title: "Register" })
+);
+app.get("/institution/purchase", auth("institution"), (r, s) =>
+  s.render("institution/purchase", { user: r.session.user, title: "Purchase" })
+);
+app.get("/institution/user-management", auth("institution"), (r, s) =>
+  s.render("institution/userManagement", { user: r.session.user, title: "Users" })
+);
+app.get("/institution/statistics", auth("institution"), (r, s) =>
+  s.render("institution/statistics", { user: r.session.user, title: "Statistics" })
+);
+
+// start server
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`✔ http://localhost:${PORT}`));
+
+
+===== front-end/public/script.js =====
+// optional flash helper
+export function flash(msg) {
+  const d = document.createElement("div");
+  d.textContent = msg;
+  d.style.cssText =
+    "position:fixed;top:1rem;right:1rem;background:#006dd0;color:#fff;padding:0.5rem 1rem;border-radius:4px;z-index:1000";
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 3000);
+}
+
+===== front-end/public/styles.css =====
+/* 0) Make every element use border-box */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* 1) Full-width reset */
+html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  font-family: Arial, sans-serif;
+  background: var(--bg);
+  color: #333;
+  min-height: 100vh;
+}
+
+/* 2) CSS variables */
+:root {
+  --primary:       #006dd0;
+  --primary-dark:  #004c97;
+  --secondary:     #69727d;
+  --bg:            #f5f7fa;
+  --card-bg:       #fff;
+  --radius:        0.5rem;
+  --gap:           1rem;
+}
+
+/* 1) Fluid full-width container without overflow */
+.container {
+  width: 100%;         /* fill the viewport */
+  max-width: 100%;     /* never exceed it */
+  margin: 0;           /* drop any auto-margins */
+  padding: 1rem 2rem;  /* internal gutters */
+}
+
+/* Login page wrapper (only on /login) */
+.login-container {
+  width: 100%;
+  max-width: 380px;            /* constrain form width */
+  margin: auto;                /* center horizontally & vertically */
+  min-height: calc(100vh - 70px); /* push below the sticky navbar */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;     /* vertical centering */
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+
+
+/* 4) Card component */
+.card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  padding: 1.5rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* 5) Dashboard grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--gap);
+}
+
+/* 6) Button-link for cards */
+.button-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: inherit;
+  height: 100px;
+  font-weight: 600;
+}
+
+/* 7) Sticky full-width navbar */
+nav.navbar, nav {
+  background: var(--primary-dark);
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 100;
+}
+nav a { 
+  color: #fff; 
+  text-decoration: none; 
+  margin-left: 1rem; 
+}
+
+/* 8) Primary buttons (you can keep your old .button if you want, but update colors) */
+.button {
+  background: var(--primary);
+  color: #fff;
+  padding: 0.35rem 0.9rem;
+  border: none;
+  border-radius: 4px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.button--secondary { 
+  background: var(--secondary); 
+}
+
+/* 9) Utilities */
+.mt-2 { margin-top: 2rem; }
+
+/* 10) Keep the rest of your existing styles unchanged */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #d0d7de;
+  padding: 0.45rem;
+  text-align: left;
+}
+th { background: #ebf1f8; }
+
+fieldset {
+  border: 1px solid #c2c5c9;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+legend { font-weight: bold; }
+
+.panel {
+  border: 1px solid #c2c5c9;
+  margin: 1rem 0;
+}
+.panel-header {
+  background: #e6e7ea;
+  padding: 0.45rem 0.6rem;
+  font-weight: bold;
+}
+
+.form-group {
+  margin-bottom: 0.6rem;
+}
+label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+input, select, textarea {
+  width: 100%;
+  padding: 0.45rem;
+  border: 1px solid #ccd1d6;
+  border-radius: 4px;
+}
+
+/* If you have additional .navbar__* rules, leave them intact below */
+.navbar__brand a { color: #fff; font-weight: 600; text-decoration: none; font-size: 1.2rem }
+.navbar__links { display: flex; gap: 1.1rem; list-style: none; margin: 0; padding: 0 }
+.navbar__links a { color: #fff; text-decoration: none }
+.navbar__links .active { border-bottom: 2px solid #ffeb3b }
+.navbar__auth { display: flex; align-items: center; gap: 0.8rem; }
+
+===== front-end/views/institution/dashboard.ejs =====
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h1>Institution Dashboard</h1>
+    <ul>
+      <div class="dashboard-grid mt-2">
+        <a href="/institution/register"       class="card button-link">1. Register institution</a>
+        <a href="/institution/purchase"       class="card button-link">2. Purchase credits</a>
+        <a href="/institution/user-management" class="card button-link">3. User management</a>
+        <a href="/institution/statistics"     class="card button-link">4. View statistics</a>
+      </div>
+
+  </main>
+</body></html>
+
+===== front-end/views/institution/purchase.ejs =====
+<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <fieldset><legend>Buy credits</legend>
+      <form action="/api/credits" method="post">
+        <input type="number" name="amount" min="1" required style="width:120px;"/>
+        <button class="button">Buy</button>
+      </form>
+    </fieldset>
+    <%- include('../partials/messageBox') %>
+  </main>
+</body></html>
+
+===== front-end/views/institution/register.ejs =====
+<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <fieldset><legend>Institutions</legend>
+      <form action="/api/institution" method="post">
+        <div class="form-group"><label>Name</label><input name="name" required/></div>
+        <div class="form-group"><label>Domain</label><input name="domain" required/></div>
+        <div class="form-group"><label>Contact e‑mail</label><input name="email" type="email" required/></div>
+        <button class="button">Save</button>
+      </form>
+    </fieldset>
+    <%- include('../partials/messageBox') %>
+  </main>
+</body></html>
+
+===== front-end/views/institution/statistics.ejs =====
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <div class="panel">
+      <div class="panel-header">Available course statistics
+        <button class="button button--secondary" style="float:right;">filter my courses</button>
+      </div>
+      <table>
+        <thead><tr><th>course name</th><th>exam period</th><th>initial submission</th><th>final submission</th></tr></thead>
+        <tbody><tr><td>physics</td><td>fall 2024</td><td>2025‑02‑22</td><td>2025‑02‑28</td></tr></tbody>
+      </table>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.6rem;margin-top:1rem;">
+        <% for(let i=0;i<6;i++){ %>
+          <div style="border:1px solid #d0d7de;height:120px;">chart</div>
+        <% } %>
+      </div>
+    </div>
+  </main>
+</body></html>
+
+===== front-end/views/institution/userManagement.ejs =====
+<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <fieldset><legend>Users</legend>
+      <form action="/api/users" method="post">
+        <div class="form-group"><label>type</label>
+          <select name="role">
+            <option>Institution representative</option>
+            <option>Instructor</option>
+            <option>Student</option>
+          </select>
+        </div>
+        <div class="form-group"><label>user name</label><input name="username" required/></div>
+        <div class="form-group"><label>password</label><input name="password" required/></div>
+        <div class="form-group"><label>id</label><input name="id"/></div>
+        <button class="button" type="submit">Add user</button>
+        <button class="button button--secondary" type="button">Change passw</button>
+      </form>
+    </fieldset>
+    <%- include('../partials/messageBox') %>
+  </main>
+</body></html>
+
+===== front-end/views/instructor/dashboard.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Instructor Dashboard' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h1>Instructor Dashboard</h1>
+    <div class="dashboard-grid mt-2">
+      <a href="/instructor/post-initial" class="card button-link">1. Post initial grades</a>
+      <a href="/instructor/review-list"  class="card button-link">2. Review requests</a>
+      <a href="/instructor/reply"        class="card button-link">3. Reply to request</a>
+      <a href="/instructor/post-final"   class="card button-link">4. Post final grades</a>
+      <a href="/instructor/statistics"   class="card button-link">5. View grade statistics</a>
+    </div>
+
+  </main>
+</body>
+</html>
+
+===== front-end/views/instructor/postFinal.ejs =====
+<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Instructor name</h2>
+
+    <fieldset><legend>FINAL GRADES POSTING</legend>
+      <form action="/api/grades/upload-final" method="post" enctype="multipart/form-data">
+        <label>xlsx file with FINAL grades</label>
+        <input type="file" name="xlsx" accept=".xlsx" style="width:100%;margin:0.4rem 0;"/>
+        <button class="button" type="submit">submit FINAL grades</button>
+      </form>
+    </fieldset>
+
+    <fieldset><legend>XLSX file parsing</legend>
+      <div class="form-group"><label>Course:</label><input/></div>
+      <div class="form-group"><label>Period:</label><input/></div>
+      <div class="form-group"><label>n. of grades</label><input style="width:120px"/></div>
+      <button class="button">CONFIRM</button>
+      <button class="button button--secondary">CANCEL</button>
+    </fieldset>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+</body></html>
+
+===== front-end/views/instructor/postInitial.ejs =====
+<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Instructor name</h2>
+
+    <fieldset><legend>INITIAL GRADES POSTING</legend>
+      <form action="/api/grades/upload" method="post" enctype="multipart/form-data">
+        <label>xlsx file with initial grades</label>
+        <input type="file" name="xlsx" accept=".xlsx" style="width:100%;margin:0.4rem 0;"/>
+        <button class="button" type="submit">submit initial grades</button>
+      </form>
+    </fieldset>
+
+    <fieldset><legend>XLSX file parsing</legend>
+      <div class="form-group"><label>Course:</label><input/></div>
+      <div class="form-group"><label>Period:</label><input/></div>
+      <div class="form-group"><label>n. of grades</label><input style="width:120px"/></div>
+      <button class="button">CONFIRM</button>
+      <button class="button button--secondary">CANCEL</button>
+    </fieldset>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+</body></html>
+
+===== front-end/views/instructor/replyForm.ejs =====
+<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Instructor name</h2>
+
+    <table>
+      <thead><tr><th>course name</th><th>exam period</th><th>student</th><th>action</th></tr></thead>
+      <tbody><tr><td>software II</td><td>spring 2025</td><td>john doe</td><td><button class="button">Reply</button></td></tr></tbody>
+    </table>
+
+    <div class="panel">
+      <div class="panel-header">REPLY TO GRADE REVIEW REQUEST&nbsp;&nbsp;software II&nbsp;spring 2025&nbsp;john doe</div>
+      <form action="/api/appeals/reply" method="post" enctype="multipart/form-data">
+        <div class="form-group">
+          <label>Action</label>
+          <select name="decision" style="width:180px;">
+            <option>Total accept</option><option>Partial accept</option><option>Reject</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>instructor's message</label>
+          <textarea name="message" style="width:100%;height:80px;"></textarea>
+        </div>
+        <button class="button button--secondary" type="button">upload reply attachment</button>
+        <button class="button" type="submit" style="float:right;">Send</button>
+        <div style="clear:both;"></div>
+      </form>
+    </div>
+  </main>
+</body></html>
+
+===== front-end/views/instructor/reviewList.ejs =====
+<!DOCTYPE html><html lang="en"><head><%- include('../partials/head',{title})%></head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Instructor name</h2>
+
+    <table>
+      <thead><tr><th>course name</th><th>exam period</th><th>student</th><th>action</th></tr></thead>
+      <tbody>
+        <tr><td>software II</td><td>spring 2025</td><td>john doe</td>
+            <td><a class="button" href="/instructor/reply">Reply</a></td></tr>
+        <tr><td>software II</td><td>spring 2025</td><td>jane doe</td>
+            <td><a class="button" href="#">Reply</a></td></tr>
+        <tr><td>software I</td><td>fall 2024</td><td>george smith</td>
+            <td><a class="button" href="#">Reply</a></td></tr>
+      </tbody>
+    </table>
+  </main>
+</body></html>
+
+===== front-end/views/instructor/statistics.ejs =====
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <div class="panel">
+      <div class="panel-header">Available course statistics
+        <button class="button button--secondary" style="float:right;">filter my courses</button>
+      </div>
+      <table>
+        <thead><tr><th>course name</th><th>exam period</th><th>initial submission</th><th>final submission</th></tr></thead>
+        <tbody><tr><td>physics</td><td>fall 2024</td><td>2025‑02‑22</td><td>2025‑02‑28</td></tr></tbody>
+      </table>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.6rem;margin-top:1rem;">
+        <% for(let i=0;i<6;i++){ %>
+          <div style="border:1px solid #d0d7de;height:120px;">chart</div>
+        <% } %>
+      </div>
+    </div>
+  </main>
+</body></html>
+
+===== front-end/views/login.ejs =====
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('partials/head',{title}) %>
+</head><body>
+  <%- include('partials/navbar' ) %>
+  <main class="login-container">
+    <fieldset><legend>Welcome to clearSKY</legend>
+      <form action="/login" method="post">
+        <div class="form-group">
+          <label>user name</label><input name="username" required/>
+        </div>
+        <div class="form-group">
+          <label>password</label><input name="password" type="password" required/>
+        </div>
+        <button class="button" type="submit">Login</button>
+        <button class="button button--secondary" type="button">Login with Google</button>
+        <% if(error){%>
+          <p style="color:#c00;margin-top:1rem"><%=error%></p>
+        <% } %>
+      </form>
+    </fieldset>
+    <%- include('partials/messageBox') %>
+  </main>
+</body></html>
+
+===== front-end/views/partials/head.ejs =====
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<link rel="stylesheet" href="/styles.css"/>
+<title><%= title %> | clearSKY</title>
+
+===== front-end/views/partials/header.ejs =====
+<div style="background:#e6e7ea;border:1px solid #c2c5c9;margin-bottom:1rem;padding:1rem">
+</div>
+
+===== front-end/views/partials/messageBox.ejs =====
+<div style="margin-top:1.5rem;border:1px solid #c2c5c9">
+  <div style="background:#e6e7ea;padding:0.4rem 0.6rem;font-weight:bold">
+    Message area
+  </div>
+  <div style="height:100px"></div>
+</div>
+
+===== front-end/views/partials/navbar.ejs =====
+<nav class="navbar">
+  <div class="navbar__brand">
+    <a href="/" class="navbar__logo">clearSKY</a>
+  </div>
+
+  <% if (!user) { %>
+    <!-- Guest nav -->
+    <ul class="navbar__links">
+      <li>
+        <a href="/login"
+           class="<%= currentUrl === '/login' ? 'active' : '' %>">
+          Log in
+        </a>
+      </li>
+    </ul>
+  <% } else { %>
+    <!-- Authenticated nav, role-aware -->
+    <ul class="navbar__links">
+      <% if (user.role === 'student') { %>
+        <%- include('./nav-student',   { currentUrl }) %>
+      <% } else if (user.role === 'instructor') { %>
+        <%- include('./nav-instructor',{ currentUrl }) %>
+      <% } else if (user.role === 'institution') { %>
+        <%- include('./nav-institution',{ currentUrl }) %>
+      <% } %>
+    </ul>
+
+    <div class="navbar__auth">
+      <span class="navbar__user">Hi, <%= user.username %></span>
+      <a href="/logout" class="button button--secondary">Log out</a>
+    </div>
+  <% } %>
+</nav>
+
+===== front-end/views/partials/nav-institution.ejs =====
+<li><a class="<%= currentUrl.startsWith('/institution/register') ? 'active' : '' %>"
+       href="/institution/register">Register</a></li>
+<li><a class="<%= currentUrl.startsWith('/institution/purchase') ? 'active' : '' %>"
+       href="/institution/purchase">Purchase</a></li>
+<li><a class="<%= currentUrl.startsWith('/institution/user-management') ? 'active' : '' %>"
+       href="/institution/user-management">Users</a></li>
+<li><a class="<%= currentUrl.startsWith('/institution/statistics') ? 'active' : '' %>"
+       href="/institution/statistics">Statistics</a></li>
+
+===== front-end/views/partials/nav-instructor.ejs =====
+<li><a class="<%= currentUrl.startsWith('/instructor/post-initial') ? 'active' : '' %>"
+       href="/instructor/post-initial">Post initial</a></li>
+<li><a class="<%= currentUrl.startsWith('/instructor/post-final') ? 'active' : '' %>"
+       href="/instructor/post-final">Post final</a></li>
+<li><a class="<%= currentUrl.startsWith('/instructor/review-list') ? 'active' : '' %>"
+       href="/instructor/review-list">Review list</a></li>
+<li><a class="<%= currentUrl.startsWith('/instructor/reply') ? 'active' : '' %>"
+       href="/instructor/reply">Reply form</a></li>
+<li><a class="<%= currentUrl.startsWith('/instructor/statistics') ? 'active' : '' %>"
+       href="/instructor/statistics">Statistics</a></li>
+
+===== front-end/views/partials/nav-student.ejs =====
+<li><a class="<%= currentUrl.startsWith('/student/my-courses') ? 'active' : '' %>"
+       href="/student/my-courses">My courses</a></li>
+<li><a class="<%= currentUrl.startsWith('/student/request') ? 'active' : '' %>"
+       href="/student/request">New review</a></li>
+<li><a class="<%= currentUrl.startsWith('/student/status') ? 'active' : '' %>"
+       href="/student/status">Review status</a></li>
+<li><a class="<%= currentUrl.startsWith('/student/statistics') ? 'active' : '' %>"
+       href="/student/statistics">Statistics</a></li>
+<li><a class="<%= currentUrl.startsWith('/student/personal') ? 'active' : '' %>"
+       href="/student/personal">Personal grades</a></li>
+
+===== front-end/views/student/dashboard.ejs =====
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h1>Student Dashboard</h1>
+    <div class="dashboard-grid mt-2">
+      <a href="/student/statistics" class="card button-link">1. View course statistics</a>
+      <a href="/student/my-courses" class="card button-link">2. My courses</a>
+      <a href="/student/request"    class="card button-link">3. Grade review request</a>
+      <a href="/student/status"     class="card button-link">4. Review request status</a>
+      <a href="/student/personal"   class="card button-link">5. View personal grades</a>
+    </div>
+
+  </main>
+</body></html>
+
+===== front-end/views/student/myCourses.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'My Courses' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <h2>Student name, email</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>course name</th>
+          <th>exam period</th>
+          <th>grading status</th>
+          <th>action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Row 1: physics (selected) -->
+        <tr style="background:#e6e7ea;">
+          <td>physics</td>
+          <td>spring 2025</td>
+          <td>open</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button">Ask for review</a>
+            <a href="/student/status"         class="button button--secondary">View review status</a>
+          </td>
+        </tr>
+
+        <!-- Row 2: software (closed) -->
+        <tr>
+          <td>software</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button">View review status</a>
+          </td>
+        </tr>
+
+        <!-- Row 3: mathematics (closed, no review requested) -->
+        <tr>
+          <td>mathematics</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button button--secondary">View review status</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+</body>
+</html>
+
+===== front-end/views/student/personal.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'View Personal Grades' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <h2>Student name, email</h2>
+
+    <!-- Course selection table -->
+    <table>
+      <thead>
+        <tr>
+          <th>course name</th>
+          <th>exam period</th>
+          <th>grading status</th>
+          <th>action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="background:#e6e7ea;">
+          <td>physics</td>
+          <td>spring 2025</td>
+          <td>open</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button">Ask for review</a>
+            <a href="/student/status"         class="button button--secondary">View review status</a>
+          </td>
+        </tr>
+        <tr>
+          <td>software</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button">View review status</a>
+          </td>
+        </tr>
+        <tr>
+          <td>mathematics</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button button--secondary">View review status</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Personal grades & charts panel -->
+    <div class="panel" style="display:flex;gap:1rem;">
+      <!-- Grades input panel -->
+      <div style="flex:1;border:1px solid #c2c5c9;border-radius:4px;padding:0.5rem;">
+        <div class="panel-header">my grades  physics – spring 2025</div>
+        <div class="form-group">
+          <label>Total</label>
+          <input readonly value="84" />
+        </div>
+        <div class="form-group">
+          <label>Q1</label>
+          <input readonly value="22" />
+        </div>
+        <div class="form-group">
+          <label>Q2</label>
+          <input readonly value="19" />
+        </div>
+        <div class="form-group">
+          <label>Q3</label>
+          <input readonly value="18" />
+        </div>
+      </div>
+
+      <!-- Total grades histogram -->
+      <div style="flex:1;border:1px solid #c2c5c9;border-radius:4px;padding:0.5rem;">
+        <div class="panel-header">physics – spring 2025 – total</div>
+        <div style="height:180px;display:flex;align-items:center;justify-content:center;color:#999;">
+          [Histogram Chart]
+        </div>
+      </div>
+
+      <!-- Q1 grades bar chart -->
+      <div style="flex:1;border:1px solid #c2c5c9;border-radius:4px;padding:0.5rem;">
+        <div class="panel-header">physics – spring 2025 – Q1</div>
+        <div style="height:180px;display:flex;align-items:center;justify-content:center;color:#999;">
+          [Q1 Chart]
+        </div>
+      </div>
+    </div>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+</body>
+</html>
+
+===== front-end/views/student/reviewRequest.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'New Review Request' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <h2>Student name, email</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>course name</th>
+          <th>exam period</th>
+          <th>grading status</th>
+          <th>action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="background:#e6e7ea;">
+          <td>physics</td>
+          <td>spring 2025</td>
+          <td>open</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button">Ask for review</a>
+            <a href="/student/status"         class="button button--secondary">View review status</a>
+          </td>
+        </tr>
+        <tr>
+          <td>software</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button">View review status</a>
+          </td>
+        </tr>
+        <tr>
+          <td>mathematics</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button button--secondary">View review status</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="panel">
+      <div class="panel-header">NEW REVIEW REQUEST  physics – spring 2025</div>
+      <form action="/api/appeals" method="post">
+        <div class="form-group">
+          <label>Message to instructor</label>
+          <textarea name="message" style="width:100%;height:120px;"
+            placeholder="please review my grade. I deserve something higher!!!"></textarea>
+        </div>
+        <button class="button" style="float:right;margin-top:0.6rem;">Submit grade review request</button>
+        <div style="clear:both;"></div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>
+
+===== front-end/views/student/reviewStatus.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Review Request Status' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <h2>Student name, email</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>course name</th>
+          <th>exam period</th>
+          <th>grading status</th>
+          <th>action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>physics</td>
+          <td>spring 2025</td>
+          <td>open</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button">View review status</a>
+          </td>
+        </tr>
+        <tr style="background:#e6e7ea;">
+          <td>software</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button">View review status</a>
+          </td>
+        </tr>
+        <tr>
+          <td>mathematics</td>
+          <td>fall 2024</td>
+          <td>closed</td>
+          <td>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button button--secondary">View review status</a>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="panel">
+      <div class="panel-header">REVIEW REQUEST STATUS  physics – spring 2025</div>
+      <div class="form-group">
+        <label>Message FROM instructor</label>
+        <textarea readonly style="width:100%;height:100px;">
+Here is my review, you need to try harder!
+        </textarea>
+      </div>
+      <a href="/api/appeals/attachment" class="button" style="margin-right:0.5rem;">Download attachment</a>
+      <a href="/student/status"          class="button button--secondary">Ack</a>
+    </div>
+  </main>
+</body>
+</html>
+
+===== front-end/views/student/statistics.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Course Statistics' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <!-- Available course statistics panel -->
+    <div class="panel">
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Available course statistics</span>
+        <a href="/student/my-courses" class="button button--secondary">Go to my courses</a>
+      </div>
+
+      <!-- Statistics table -->
+      <table>
+        <thead>
+          <tr>
+            <th>course name</th>
+            <th>exam period</th>
+            <th>initial grades submission</th>
+            <th>final grades submission</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background:#e6e7ea;">
+            <td>physics</td>
+            <td>fall 2024</td>
+            <td>2025-02-22</td>
+            <td>2025-02-28</td>
+          </tr>
+          <tr>
+            <td>software</td>
+            <td>fall 2024</td>
+            <td>2025-02-01</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td>mathematics</td>
+            <td>fall 2024</td>
+            <td>2025-02-02</td>
+            <td>2025-02-14</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Charts grid -->
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;grid-auto-rows:auto;gap:1rem;">
+      <!-- Large total chart -->
+      <div class="panel" style="grid-column:1 / 2; grid-row:1 / 3;">
+        <div class="panel-header">physics – spring 2025 – total</div>
+        <div style="height:250px;display:flex;align-items:center;justify-content:center;color:#999;">
+          [Total Grades Histogram]
+        </div>
+      </div>
+
+      <!-- Q1 chart -->
+      <div class="panel">
+        <div class="panel-header">physics – spring 2025 – Q1</div>
+        <div style="height:120px;display:flex;align-items:center;justify-content:center;color:#999;">
+          [Q1 Chart]
+        </div>
+      </div>
+
+      <!-- Q2 chart -->
+      <div class="panel">
+        <div class="panel-header">physics – spring 2025 – Q2</div>
+        <div style="height:120px;display:flex;align-items:center;justify-content:center;color:#999;">
+          [Q2 Chart]
+        </div>
+      </div>
+
+      <!-- Q3 chart -->
+      <div class="panel">
+        <div class="panel-header">physics – spring 2025 – Q3</div>
+        <div style="height:120px;display:flex;align-items:center;justify-content:center;color:#999;">
+          [Q3 Chart]
+        </div>
+      </div>
+
+      <!-- Q4 chart -->
+      <div class="panel">
+        <div class="panel-header">physics – spring 2025 – Q4</div>
+        <div style="height:120px;display:flex;align-items:center;justify-content:center;color:#999;">
+          [Q4 Chart]
+        </div>
+      </div>
+    </div>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+</body>
+</html>
+
