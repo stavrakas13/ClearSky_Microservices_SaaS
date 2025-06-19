@@ -178,6 +178,25 @@ func HandleCreditsSpent(ch *amqp.Channel) error {
 	)
 }
 
+func HandleFinalGradesInc(req PurchaseRequest, ch *amqp.Channel) error {
+	jsonbody, err := json.Marshal(req)
+
+	if err != nil {
+		return err
+	}
+	return ch.Publish(
+		"clearSky.events",
+		"incr.credits",
+		false,
+		false,
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			Body:         jsonbody,
+		},
+	)
+}
+
 func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {
 	log.Println("[HandleCreditsPurchased] → entered")
 
@@ -298,6 +317,7 @@ func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {
 				statusCode = http.StatusBadRequest
 			}
 			log.Printf("[HandleCreditsPurchased] ✅ replying to client with status=%d message=%q", statusCode, resp.Message)
+			HandleFinalGradesInc(req, ch)
 			c.JSON(statusCode, resp)
 			return
 		}
