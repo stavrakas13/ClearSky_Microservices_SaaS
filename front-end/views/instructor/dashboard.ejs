@@ -8,13 +8,14 @@
   <main class="container">
     <%- include('../partials/header') %>
     <h1>Instructor Dashboard</h1>
-    <ul>
-      <li><a class="button" href="/instructor/post-initial">1. Post initial grades</a></li>
-      <li><a class="button" href="/instructor/review-list">2. Review requests</a></li>
-      <li><a class="button" href="/instructor/reply">3. Reply to request</a></li>
-      <li><a class="button" href="/instructor/post-final">4. Post final grades</a></li>
-      <li><a class="button" href="/instructor/statistics">5. View grade statistics</a></li>
-    </ul>
+    <div class="dashboard-grid mt-2">
+      <a href="/instructor/post-initial" class="card button-link">1. Post initial grades</a>
+      <a href="/instructor/review-list"  class="card button-link">2. Review requests</a>
+      <a href="/instructor/reply"        class="card button-link">3. Reply to request</a>
+      <a href="/instructor/post-final"   class="card button-link">4. Post final grades</a>
+      <a href="/instructor/statistics"   class="card button-link">5. View grade statistics</a>
+    </div>
+
   </main>
 </body>
 </html>

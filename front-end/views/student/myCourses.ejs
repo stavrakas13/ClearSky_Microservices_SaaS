@@ -8,7 +8,7 @@
   <main class="container">
     <%- include('../partials/header') %>
 
-    <h2>Student name, email,</h2>
+    <h2>Student name, email</h2>
 
     <table>
       <thead>
@@ -26,9 +26,9 @@
           <td>spring 2025</td>
           <td>open</td>
           <td>
-            <button class="button">view my grades</button>
-            <button class="button">ask for review</button>
-            <button class="button button--secondary" disabled>view review status</button>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button">Ask for review</a>
+            <a href="/student/status"         class="button button--secondary">View review status</a>
           </td>
         </tr>
 
@@ -38,9 +38,9 @@
           <td>fall 2024</td>
           <td>closed</td>
           <td>
-            <button class="button">view my grades</button>
-            <button class="button button--secondary" disabled>ask for review</button>
-            <button class="button">view review status</button>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button">View review status</a>
           </td>
         </tr>
 
@@ -50,9 +50,9 @@
           <td>fall 2024</td>
           <td>closed</td>
           <td>
-            <button class="button">view my grades</button>
-            <button class="button button--secondary" disabled>ask for review</button>
-            <button class="button button--secondary" disabled>view review status</button>
+            <a href="/student/personal"       class="button">View my grades</a>
+            <a href="/student/request"        class="button button--secondary">Ask for review</a>
+            <a href="/student/status"         class="button button--secondary">View review status</a>
           </td>
         </tr>
       </tbody>

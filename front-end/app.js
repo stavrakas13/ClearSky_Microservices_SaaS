@@ -7,6 +7,14 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+// after your session/auth middleware
+app.use((req, res, next) => {
+  res.locals.user       = req.user || null;
+  res.locals.currentUrl = req.originalUrl;
+  next();
+});
+
+
 // view engine
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -19,6 +27,13 @@ app.use(
     secret: "change-this-secret",
     resave: false,
     saveUninitialized: true,
+  })
+);
+// Public sign-up page
+app.get("/signup", (req, res) =>
+  res.render("institution/userManagement", {
+    user: null,
+    title: "Sign Up"
   })
 );
 
@@ -123,3 +138,4 @@ app.get("/institution/statistics", auth("institution"), (r, s) =>
 // start server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`✔ http://localhost:${PORT}`));
+

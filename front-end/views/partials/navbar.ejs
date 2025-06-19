@@ -1,8 +1,32 @@
-<nav>
-  <div>clearSKY</div>
-  <% if (user) { %>
-    <div>
-      <span>Hi, <%= user.username %></span>
+<nav class="navbar">
+  <div class="navbar__brand">
+    <a href="/" class="navbar__logo">clearSKY</a>
+  </div>
+
+  <% if (!user) { %>
+    <!-- Guest nav -->
+    <ul class="navbar__links">
+      <li>
+        <a href="/login"
+           class="<%= currentUrl === '/login' ? 'active' : '' %>">
+          Log in
+        </a>
+      </li>
+    </ul>
+  <% } else { %>
+    <!-- Authenticated nav, role-aware -->
+    <ul class="navbar__links">
+      <% if (user.role === 'student') { %>
+        <%- include('./nav-student',   { currentUrl }) %>
+      <% } else if (user.role === 'instructor') { %>
+        <%- include('./nav-instructor',{ currentUrl }) %>
+      <% } else if (user.role === 'institution') { %>
+        <%- include('./nav-institution',{ currentUrl }) %>
+      <% } %>
+    </ul>
+
+    <div class="navbar__auth">
+      <span class="navbar__user">Hi, <%= user.username %></span>
       <a href="/logout" class="button button--secondary">Log out</a>
     </div>
   <% } %>
