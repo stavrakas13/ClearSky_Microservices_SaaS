@@ -38,46 +38,56 @@ func InitDB() {
 func Diminish(inst_name string, credits int) (bool, error) {
 	ctx := context.Background()
 
+	// 1. Start transaction
 	tx, err := Pool.Begin(ctx)
 	if err != nil {
-		log.Printf("Failed to begin transaction: %v", err)
+		log.Printf("[Diminish] Failed to begin transaction: %v", err)
 		return false, err
 	}
-	defer tx.Rollback(ctx) // Safely rollback if anything fails
+	defer tx.Rollback(ctx) // automatic rollback on error
 
-	checkQuery := `SELECT credits FROM credits_inst WHERE name = $1 FOR UPDATE` //LOCK TO AVOID RACE CONDITION IN DB
+	// 2. Lock and read current credits
+	checkQuery := `SELECT credits FROM credits_inst WHERE name = $1 FOR UPDATE`
 	var current_credits int
 	err = tx.QueryRow(ctx, checkQuery, inst_name).Scan(&current_credits)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
+			log.Printf("[Diminish] Institution not found: %s", inst_name)
 			return false, fmt.Errorf("institution '%s' not found", inst_name)
 		}
-		log.Printf("Failed to check credits: %v", err)
+		log.Printf("[Diminish] Failed to check credits: %v", err)
 		return false, err
 	}
+	log.Printf("[Diminish] Current credits for %s: %d", inst_name, current_credits)
 
+	// 3. Check for sufficient credits
 	if current_credits < credits {
+		log.Printf("[Diminish] Not enough credits: has %d, needs %d", current_credits, credits)
 		return false, fmt.Errorf("insufficient credits (current: %d)", current_credits)
 	}
 
-	insertQuery := `UPDATE credits_inst SET credits = credits - $1 WHERE name = $2`
-
-	_, err = tx.Exec(ctx, insertQuery, credits, inst_name)
-
+	// 4. Perform update
+	updateQuery := `UPDATE credits_inst SET credits = credits - $1 WHERE name = $2`
+	res, err := tx.Exec(ctx, updateQuery, credits, inst_name)
 	if err != nil {
-		log.Printf("Failed to make the diminsh: %v", err)
+		log.Printf("[Diminish] Failed to decrement credits: %v", err)
 		return false, err
 	}
 
-	//Commit the transaction
+	rows := res.RowsAffected()
+	log.Printf("[Diminish] Rows affected by update: %d", rows)
+	if rows != 1 {
+		return false, fmt.Errorf("unexpected number of rows affected: %d", rows)
+	}
+
+	// 5. Commit
 	if err := tx.Commit(ctx); err != nil {
-		log.Printf("Failed to commit transaction: %v", err)
+		log.Printf("[Diminish] Failed to commit transaction: %v", err)
 		return false, err
 	}
 
+	log.Printf("[Diminish] Credits decremented successfully for %s", inst_name)
 	return true, nil
-
 }
 
 func BuyCredits(inst_name string, credits int) (bool, error) {

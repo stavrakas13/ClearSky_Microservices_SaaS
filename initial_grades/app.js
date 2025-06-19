@@ -16,7 +16,7 @@ const XLSX     = require('xlsx');
 const {
   MONGO_URI,
   RABBITMQ_URI,
-  RABBITMQ_EXCHANGE,   // "clearSky.event"
+  RABBITMQ_EXCHANGE,   // ""
   RABBITMQ_ROUTING_KEY // "postgrades.init"
 } = process.env;
 

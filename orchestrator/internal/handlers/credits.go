@@ -151,109 +151,31 @@ func HandleCreditsAvail(c *gin.Context, ch *amqp.Channel) {
 	}
 }
 
-func HandleCreditsSpent(c *gin.Context, ch *amqp.Channel) {
-	var req SpendReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("BindJSON failed: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+// this function will be used after uploaded final grades.
+func HandleCreditsSpent(ch *amqp.Channel) error {
+	type Payload struct {
+		Name   string  `json:"name"`
+		Amount float64 `json:"amount"`
 	}
-
-	replyQ, err := ch.QueueDeclare(
-		"",    // empty name = let broker generate a unique name
-		false, // durable
-		true,  // delete when unused (auto-delete)
-		true,  // exclusive
-		false, // no-wait
-		nil,   // args
-	)
+	body := Payload{
+		Name:   "NTUA",
+		Amount: 1,
+	}
+	jsonbody, err := json.Marshal(body)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, SpendResponse{
-			Status:  "error",
-			Message: "failed to create reply queue",
-			Error:   err.Error(),
-		})
-		return
+		return err
 	}
-
-	msgs, err := ch.Consume(
-		replyQ.Name,
-		"",    // consumer tag
-		true,  // auto-ack replies
-		true,  // exclusive
-		false, // no-local
-		false, // no-wait
-		nil,
-	)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, SpendResponse{
-			Status:  "error",
-			Message: "failed to start consuming replies",
-			Error:   err.Error(),
-		})
-		return
-	}
-
-	corrID := uuid.New().String()
-	body, _ := json.Marshal(req)
-
-	err = ch.Publish(
-		"clearSky.events", // exchange
-		"credits.spent",   // routing key
-		false,             // mandatory
-		false,             // immediate
+	return ch.Publish(
+		"clearSky.events",
+		"credits.spent",
+		false,
+		false,
 		amqp.Publishing{
-			ContentType:   "application/json",
-			CorrelationId: corrID,
-			ReplyTo:       replyQ.Name,
-			Body:          body,
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			Body:         jsonbody,
 		},
 	)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, SpendResponse{
-			Status:  "error",
-			Message: "failed to publish request",
-			Error:   err.Error(),
-		})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	for {
-		select {
-		case <-ctx.Done():
-			c.JSON(http.StatusGatewayTimeout, SpendResponse{
-				Status:  "error",
-				Message: "service timeout",
-			})
-			return
-
-		case d := <-msgs:
-			if d.CorrelationId != corrID {
-				// ignore stray messages
-				continue
-			}
-
-			var resp PurchaseResponse
-			if err := json.Unmarshal(d.Body, &resp); err != nil {
-				c.JSON(http.StatusInternalServerError, SpendResponse{
-					Status:  "error",
-					Message: "invalid reply format",
-					Error:   err.Error(),
-				})
-				return
-			}
-
-			statusCode := http.StatusOK
-			if resp.Status != "OK" {
-				statusCode = http.StatusBadRequest
-			}
-			c.JSON(statusCode, resp)
-			return
-		}
-	}
 }
 
 func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {

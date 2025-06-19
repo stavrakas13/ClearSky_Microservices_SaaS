@@ -22,21 +22,32 @@ type Response struct {
 }
 
 func Spending(d amqp.Delivery, ch *amqp.Channel) {
+	log.Printf("[Spending] Received message. CorrelationID=%s, ReplyTo=%s", d.CorrelationId, d.ReplyTo)
+
 	var req SpendReq
 	var res Response
 
-	defer d.Ack(false)
+	// Ensure the message is acknowledged at the end, no matter what.
+	defer func() {
+		if err := d.Ack(false); err != nil {
+			log.Printf("[Spending] Failed to ack message: %v", err)
+		}
+	}()
 
 	// 1. Parse JSON ---------------------------------------------------------
 	if err := json.Unmarshal(d.Body, &req); err != nil {
+		log.Printf("[Spending] JSON unmarshal error: %v | Body=%s", err, string(d.Body))
 		res.Status = "error"
 		res.Message = "Invalid JSON"
 		res.Err = nil
 		publishReply(ch, d, res)
 		return
 	}
+	log.Printf("[Spending] Parsed request: %+v", req)
 
-	IsComplete, err := dbService.Diminish(req.Name, req.Amount)
+	// 2. Attempt to diminish credits ---------------------------------------
+	isComplete, err := dbService.Diminish(req.Name, req.Amount)
+	log.Printf("[Spending] dbService.Diminish(Name=%s, Amount=%d) => isComplete=%t, err=%v", req.Name, req.Amount, isComplete, err)
 
 	if err != nil {
 		res.Status = "error"
@@ -46,24 +57,37 @@ func Spending(d amqp.Delivery, ch *amqp.Channel) {
 		return
 	}
 
-	if IsComplete {
+	if isComplete {
 		res.Status = "OK"
 		res.Message = "Valid spent of your credits"
 		res.Err = nil
 		publishReply(ch, d, res)
 		return
 	}
+
+	// If we reach here, it means credits were diminished but not fully consumed (business rule dependent)
+	res.Status = "conflict"
+	res.Message = "Partial credits spent; remaining balance exists"
+	res.Err = nil
+	publishReply(ch, d, res)
 }
 
 func publishReply(ch *amqp.Channel, d amqp.Delivery, res Response) {
+	// fire-and-forget call; nothing to send back
 	if d.ReplyTo == "" {
-		// fire-and-forget call; nothing to send back
+		log.Printf("[publishReply] ReplyTo empty; not sending any response. CorrelationID=%s", d.CorrelationId)
 		return
 	}
 
-	body, _ := json.Marshal(res)
+	body, errMarshal := json.Marshal(res)
+	if errMarshal != nil {
+		log.Printf("[publishReply] Failed to marshal response: %v | Response=%+v", errMarshal, res)
+		return
+	}
 
-	err := ch.Publish(
+	log.Printf("[publishReply] Publishing reply. CorrelationID=%s, Body=%s", d.CorrelationId, string(body))
+
+	if err := ch.Publish(
 		"",        // default exchange because we address the queue directly
 		d.ReplyTo, // queue the caller named
 		false,     // mandatory
@@ -73,8 +97,7 @@ func publishReply(ch *amqp.Channel, d amqp.Delivery, res Response) {
 			CorrelationId: d.CorrelationId,
 			Body:          body,
 		},
-	)
-	if err != nil {
-		log.Printf(" [!] Failed to publish reply: %v", err)
+	); err != nil {
+		log.Printf("[publishReply] Failed to publish reply: %v", err)
 	}
 }

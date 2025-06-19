@@ -7,7 +7,7 @@ async function main() {
   try {
     await client.connect();
 
-    const db = client.db("credits");
+    const db = client.db("final_grades");
 
     const existing = await db.listCollections({ name: "credits" }).toArray();
     if (existing.length) {

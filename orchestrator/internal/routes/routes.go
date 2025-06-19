@@ -23,16 +23,16 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	// 16 MiB in-memory before spilling to /tmp
 	r.MaxMultipartMemory = 16 << 20 // 16 MiB
 
-	r.PATCH("/purchase", func(c *gin.Context) {
-		handlers.HandleCreditsPurchased(c, ch)
-	})
+	// r.PATCH("/purchase", func(c *gin.Context) {
+	// 	handlers.HandleCreditsPurchased(c, ch)
+	// })
 
 	r.GET("/mycredits", func(c *gin.Context) {
 		handlers.HandleCreditsAvail(c, ch)
 	})
 
-	r.PATCH("/spending", func(c *gin.Context) {
-		handlers.HandleCreditsSpent(c, ch)
+	r.PATCH("/postFinalGrades", func(c *gin.Context) {
+		handlers.UploadExcelFinal(c, ch)
 	})
 
 	r.POST("/registration", func(c *gin.Context) {

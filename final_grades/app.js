@@ -4,36 +4,44 @@ const mongoose       = require('mongoose');
 const { MongoClient } = require('mongodb');
 const XLSX           = require('xlsx');
 
-// ─────────────────────── ENV ───────────────────────
 const {
   MONGO_URI,
   RABBITMQ_URI,
   RABBITMQ_EXCHANGE,
-  RABBITMQ_ROUTING_KEY,         // for grades
-  RABBITMQ_CREDIT_INCR_KEY      // for credit top-ups
+  RABBITMQ_ROUTING_KEY,
+  RABBITMQ_CREDIT_INCR_KEY
 } = process.env;
 
 if (!MONGO_URI || !RABBITMQ_URI || !RABBITMQ_EXCHANGE ||
     !RABBITMQ_ROUTING_KEY || !RABBITMQ_CREDIT_INCR_KEY) {
-  console.error('❌  Missing one of .env variables '
-    + '[MONGO_URI, RABBITMQ_URI, RABBITMQ_EXCHANGE, '
-    + 'RABBITMQ_ROUTING_KEY, RABBITMQ_CREDIT_INCR_KEY]');
+  console.error('❌  Missing required environment variables');
   process.exit(1);
 }
 
 (async () => {
-  // — Mongo via mongoose for grades
-  await mongoose.connect(MONGO_URI);
-  console.log('✅  MongoDB (grades) connected');
+  // Connect to MongoDB for grades
+  try {
+    await mongoose.connect(MONGO_URI);
+    console.log('✅  Connected to MongoDB via mongoose (grades)');
+  } catch (err) {
+    console.error('❌ Failed to connect to MongoDB (grades):', err.message);
+    process.exit(1);
+  }
 
-  // — Mongo via MongoClient for credits
-  const creditsClient = new MongoClient(MONGO_URI);
-  await creditsClient.connect();
-  const creditsDb   = creditsClient.db('credits');
+  // Connect to MongoDB for credits
+  let creditsClient;
+  try {
+    creditsClient = new MongoClient(MONGO_URI);
+    await creditsClient.connect();
+    console.log('✅  Connected to MongoDB via MongoClient (credits)');
+  } catch (err) {
+    console.error('❌ Failed to connect to MongoDB (credits):', err.message);
+    process.exit(1);
+  }
+
+  const creditsDb = creditsClient.db('final_grades');
   const creditsColl = creditsDb.collection('credits');
-  console.log('✅  MongoDB (credits) connected');
 
-  // — Grade model
   const Grade = mongoose.model('Grade', new mongoose.Schema({
     AM: String, name: String, email: String,
     declarationPeriod: String, classTitle: String,
@@ -43,55 +51,66 @@ if (!MONGO_URI || !RABBITMQ_URI || !RABBITMQ_EXCHANGE ||
     Q9: Number, Q10: Number
   }));
 
-  // — RabbitMQ setup
-  const conn    = await amqp.connect(RABBITMQ_URI);
-  const channel = await conn.createChannel();
-  await channel.assertExchange(RABBITMQ_EXCHANGE, 'direct', { durable: true });
+  // Connect to RabbitMQ
+  let conn, channel;
+  try {
+    conn = await amqp.connect(RABBITMQ_URI);
+    channel = await conn.createChannel();
+    await channel.assertExchange(RABBITMQ_EXCHANGE, 'direct', { durable: true });
+    console.log('✅  Connected to RabbitMQ and exchange set');
+  } catch (err) {
+    console.error('❌ RabbitMQ connection/setup failed:', err.message);
+    process.exit(1);
+  }
 
-  //—— Helper for RPC replies ——
   const makeReply = msg => payload => {
     const { replyTo, correlationId } = msg.properties;
     if (!replyTo) return;
-    channel.publish(
-      '', replyTo,
-      Buffer.from(JSON.stringify(payload)),
-      { contentType: 'application/json', correlationId }
-    );
+    try {
+      channel.publish(
+        '', replyTo,
+        Buffer.from(JSON.stringify(payload)),
+        { contentType: 'application/json', correlationId }
+      );
+      console.log(`📤  Reply sent to ${replyTo} (corrId: ${correlationId})`);
+    } catch (err) {
+      console.error('❌ Failed to send reply:', err.message);
+    }
   };
 
-  // ──── Listener #1: ingest grades & decrement credit ────
+  // ─── Listener 1: Grades
   {
     const q1 = await channel.assertQueue('', { exclusive: true });
     await channel.bindQueue(q1.queue, RABBITMQ_EXCHANGE, RABBITMQ_ROUTING_KEY);
     channel.prefetch(10);
-    console.log(`🚀  Listening grades on "${RABBITMQ_ROUTING_KEY}"`);
+    console.log(`🚀  Listening for grades on "${RABBITMQ_ROUTING_KEY}"`);
 
     channel.consume(q1.queue, async msg => {
       if (!msg) return;
+      console.log('📩  Received grade message');
       const reply = makeReply(msg);
 
-      // decode buffer / base64…
       const ct = (msg.properties.contentType || '').toLowerCase().trim();
-      const buffer = (ct === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                    || ct === 'application/octet-stream')
+      const buffer = (ct.includes('spreadsheet') || ct === 'application/octet-stream')
         ? msg.content
         : Buffer.from(msg.content.toString(), 'base64');
 
       try {
-        // parse workbook…
         const wb   = XLSX.read(buffer, { type: 'buffer' });
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {
           header: 1, raw: false
         });
+        console.log(`📊  Parsed XLSX with ${rows.length} rows`);
         if (rows.length < 4) throw new Error('Template too short');
-        const weightRow = rows[1], headerRow = rows[2], dataRows = rows.slice(3);
 
+        const weightRow = rows[1], headerRow = rows[2], dataRows = rows.slice(3);
         const map = {
           'Αριθμός Μητρώου':'AM', 'Ονοματεπώνυμο':'name',
           'Ακαδημαϊκό E-mail':'email','Περίοδος δήλωσης':'declarationPeriod',
           'Τμήμα Τάξης':'classTitle','Κλίμακα βαθμολόγησης':'gradingScale',
           'Βαθμολογία':'grade'
         };
+
         const docs = dataRows.map(row => {
           const d = {};
           headerRow.forEach((t,i) => {
@@ -113,47 +132,52 @@ if (!MONGO_URI || !RABBITMQ_URI || !RABBITMQ_EXCHANGE ||
           return d;
         });
 
-        // decrement credit based on first AM
         const firstAM = docs[0]?.AM || '';
         let org = null;
         if (firstAM.startsWith('031')) org = 'NTUA';
         else if (firstAM.startsWith('022')) org = 'EKPA';
+
         if (org) {
           const upd = await creditsColl.updateOne(
             { name: org }, { $inc: { cred: -1 } }
           );
           console.log(upd.matchedCount
-            ? `✓ Decremented ${org}`
-            : `⚠️  No credit doc for ${org}`);
+            ? `➖  Decremented credit for ${org}`
+            : `⚠️  No credit document for ${org}`);
+        } else {
+          console.warn('⚠️  Unknown organization for AM:', firstAM);
         }
 
-        // insert grades
+        // const upd = await creditsColl.updateOne(
+        //     { name: "NTUA" }, { $inc: { cred: -1 } })
         const res = await Grade.insertMany(docs, { ordered: false });
-        console.log(`✅  Inserted ${res.length} grade docs`);
+        console.log(`✅  Inserted ${res.length} grades`);
         reply({ status: 'ok', message: `Inserted ${res.length}` });
         channel.ack(msg);
 
       } catch (err) {
-        console.error('❌ Grades error:', err.message);
+        console.error('❌ Error processing grades:', err.message);
         reply({ status: 'error', message: err.message });
         channel.nack(msg, false, false);
       }
     }, { noAck: false });
   }
 
-  // ──── Listener #2: credit top-ups ────────────────────
+  // ─── Listener 2: Credit Top-ups
   {
     const q2 = await channel.assertQueue('', { exclusive: true });
     await channel.bindQueue(q2.queue, RABBITMQ_EXCHANGE, RABBITMQ_CREDIT_INCR_KEY);
-    console.log(`🚀  Listening credits on "${RABBITMQ_CREDIT_INCR_KEY}"`);
+    console.log(`🚀  Listening for credit top-ups on "${RABBITMQ_CREDIT_INCR_KEY}"`);
 
     channel.consume(q2.queue, async msg => {
       if (!msg) return;
+      console.log('📩  Received credit top-up message');
       const reply = makeReply(msg);
 
       try {
         const content = msg.content.toString();
         const { name, amount } = JSON.parse(content);
+        console.log(`🔄  Top-up request for ${name}: +${amount}`);
 
         if (typeof name !== 'string' || typeof amount !== 'number') {
           throw new Error('Invalid payload: expected {name: string, amount: number}');
@@ -165,7 +189,7 @@ if (!MONGO_URI || !RABBITMQ_URI || !RABBITMQ_EXCHANGE ||
         );
 
         if (upd.matchedCount) {
-          console.log(`✓ Increased ${name} by ${amount}`);
+          console.log(`✅  Increased credit for ${name} by ${amount}`);
           reply({ status: 'ok', message: `+${amount} to ${name}` });
         } else {
           console.warn(`⚠️  No credit doc for ${name}`);
@@ -175,11 +199,10 @@ if (!MONGO_URI || !RABBITMQ_URI || !RABBITMQ_EXCHANGE ||
         channel.ack(msg);
 
       } catch (err) {
-        console.error('❌ Credit-topup error:', err.message);
+        console.error('❌ Error processing credit top-up:', err.message);
         reply({ status: 'error', message: err.message });
         channel.nack(msg, false, false);
       }
     }, { noAck: false });
   }
-
 })();

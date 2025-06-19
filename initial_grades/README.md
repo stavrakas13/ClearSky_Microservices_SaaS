@@ -22,7 +22,7 @@ Create a `.env` file in your project root with:
 ```dotenv
 MONGO_URI=mongodb://mongo:27017/grades
 RABBITMQ_URI=amqp://rabbitmq:5672
-RABBITMQ_EXCHANGE=clearSky.event
+RABBITMQ_EXCHANGE=clearSky.events
 RABBITMQ_ROUTING_KEY=postgrades.init
 RABBIT_USER=yourRabbitUser
 RABBIT_PASS=yourRabbitPass
