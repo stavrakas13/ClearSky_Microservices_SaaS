@@ -126,9 +126,6 @@ frontend:
       - "3001:3000"
     depends_on:
       - orchestrator
-      - student_service
-      - instructor_service
-      - credits_service
     networks:
       - clearSky-net
   
