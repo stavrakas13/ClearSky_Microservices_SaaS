@@ -1,17 +1,11 @@
-// public/js/student/statistics.js
-import { flash } from '../script.js';
+// student/statistics.js
+import { flash } from '../../script.js';
+import { getDistributions } from '../../api/stats.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const res = await fetch('/stats/distributions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ /* filters */ }),
-    });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.message || res.statusText);
-
-    console.log('Stats:', body.data);
+    const { data } = await getDistributions({ /* filters */ });
+    console.log('Stats:', data);
     flash('Statistics loaded—see console.');
   } catch (err) {
     flash(err.message);
