@@ -257,23 +257,29 @@ func HandleCreditsSpent(c *gin.Context, ch *amqp.Channel) {
 }
 
 func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {
+	log.Println("[HandleCreditsPurchased] → entered")
 
+	// 1. Bind JSON
 	var req PurchaseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[HandleCreditsPurchased] ❌ bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("[HandleCreditsPurchased] 📥 request: name=%s amount=%d", req.Name, req.Amount)
 
 	// 2. Declare a temporary reply queue
+	log.Println("[HandleCreditsPurchased] ⏳ declaring reply queue")
 	replyQ, err := ch.QueueDeclare(
-		"",    // empty name = let broker generate a unique name
+		"",    // empty name = broker-generated
 		false, // durable
-		true,  // delete when unused (auto-delete)
+		true,  // auto-delete
 		true,  // exclusive
 		false, // no-wait
 		nil,   // args
 	)
 	if err != nil {
+		log.Printf("[HandleCreditsPurchased] ❌ QueueDeclare failed: %v", err)
 		c.JSON(http.StatusInternalServerError, PurchaseResponse{
 			Status:  "error",
 			Message: "failed to create reply queue",
@@ -281,17 +287,21 @@ func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {
 		})
 		return
 	}
+	log.Printf("[HandleCreditsPurchased] ✅ declared reply queue: %s", replyQ.Name)
 
+	// 3. Start consuming replies
+	log.Printf("[HandleCreditsPurchased] ⏳ start consuming on %s", replyQ.Name)
 	msgs, err := ch.Consume(
 		replyQ.Name,
 		"",    // consumer tag
-		true,  // auto-ack replies
+		true,  // auto-ack
 		true,  // exclusive
 		false, // no-local
 		false, // no-wait
 		nil,
 	)
 	if err != nil {
+		log.Printf("[HandleCreditsPurchased] ❌ Consume failed: %v", err)
 		c.JSON(http.StatusInternalServerError, PurchaseResponse{
 			Status:  "error",
 			Message: "failed to start consuming replies",
@@ -299,10 +309,12 @@ func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {
 		})
 		return
 	}
+	log.Println("[HandleCreditsPurchased] ✅ consumer started")
 
+	// 4. Publish the event
 	corrID := uuid.New().String()
 	body, _ := json.Marshal(req)
-
+	log.Printf("[HandleCreditsPurchased] ⏳ publishing to exchange=clearSky.events routingKey=credits.purchased corrID=%s", corrID)
 	err = ch.Publish(
 		"clearSky.events",   // exchange
 		"credits.purchased", // routing key
@@ -316,6 +328,7 @@ func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {
 		},
 	)
 	if err != nil {
+		log.Printf("[HandleCreditsPurchased] ❌ Publish failed: %v", err)
 		c.JSON(http.StatusInternalServerError, PurchaseResponse{
 			Status:  "error",
 			Message: "failed to publish request",
@@ -323,13 +336,16 @@ func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {
 		})
 		return
 	}
+	log.Println("[HandleCreditsPurchased] ✅ published, waiting for reply...")
 
+	// 5. Wait for reply (with timeout)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("[HandleCreditsPurchased] ⏰ timeout waiting for reply")
 			c.JSON(http.StatusGatewayTimeout, PurchaseResponse{
 				Status:  "error",
 				Message: "service timeout",
@@ -337,13 +353,16 @@ func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {
 			return
 
 		case d := <-msgs:
+			log.Printf("[HandleCreditsPurchased] 🔔 got delivery corrID=%s", d.CorrelationId)
 			if d.CorrelationId != corrID {
-				// ignore stray messages
+				log.Printf("[HandleCreditsPurchased] 🔍 ignoring stray message (corrID=%s)", d.CorrelationId)
 				continue
 			}
 
+			log.Println("[HandleCreditsPurchased] ⏳ unmarshalling reply")
 			var resp PurchaseResponse
 			if err := json.Unmarshal(d.Body, &resp); err != nil {
+				log.Printf("[HandleCreditsPurchased] ❌ invalid reply format: %v", err)
 				c.JSON(http.StatusInternalServerError, PurchaseResponse{
 					Status:  "error",
 					Message: "invalid reply format",
@@ -356,6 +375,7 @@ func HandleCreditsPurchased(c *gin.Context, ch *amqp.Channel) {
 			if resp.Status != "ok" {
 				statusCode = http.StatusBadRequest
 			}
+			log.Printf("[HandleCreditsPurchased] ✅ replying to client with status=%d message=%q", statusCode, resp.Message)
 			c.JSON(statusCode, resp)
 			return
 		}

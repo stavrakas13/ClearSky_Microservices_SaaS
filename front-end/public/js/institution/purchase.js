@@ -1,4 +1,3 @@
-// public/js/institution/purchase.js
 import { flash } from '../script.js';
 
 const form = document.querySelector('fieldset form');
@@ -10,7 +9,10 @@ form.addEventListener('submit', async e => {
     const res = await fetch('/purchase', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount }),
+      body: JSON.stringify({
+        name: "NTUA",
+        amount: 5
+      }),
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body.message || res.statusText);

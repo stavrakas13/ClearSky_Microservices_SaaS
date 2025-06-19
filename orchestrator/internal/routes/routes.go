@@ -46,16 +46,16 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	r.POST("/stats/persist", func(c *gin.Context) {
 		handlers.HandlePersistAndCalculate(c, ch)
 	})
-        r.POST("/stats/distributions", func(c *gin.Context) {
-                handlers.HandleGetDistributions(c, ch)
-        })
+	r.POST("/stats/distributions", func(c *gin.Context) {
+		handlers.HandleGetDistributions(c, ch)
+	})
 
-        r.POST("/personal/courses", func(c *gin.Context) {
-                handlers.HandleGetStudentCourses(c, ch)
-        })
-        r.POST("/personal/grades", func(c *gin.Context) {
-                handlers.HandleGetPersonalGrades(c, ch)
-        })
+	r.POST("/personal/courses", func(c *gin.Context) {
+		handlers.HandleGetStudentCourses(c, ch)
+	})
+	r.POST("/personal/grades", func(c *gin.Context) {
+		handlers.HandleGetPersonalGrades(c, ch)
+	})
 
 	// Student and Instructor API calls.
 

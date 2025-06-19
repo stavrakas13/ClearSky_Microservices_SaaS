@@ -8,8 +8,8 @@ services:
     restart: always
     container_name: clearSky-rabbitmq
     ports:
-      - "5672:5672"    # AMQP port
-      - "15672:15672"  # Management UI
+      - "5673:5672"    # AMQP port
+      - "15673:15672"  # Management UI
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
@@ -21,7 +21,9 @@ services:
       - clearSky-net
 
   orchestrator:
-    build: ./orchestrator
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
     volumes:
       - ./orchestrator/configs:/app/configs
     restart: always
@@ -43,16 +45,18 @@ services:
       POSTGRES_PASSWORD: root
       POSTGRES_DB: reviewsdb
     ports:
-      - "5432:5432"
-    volumes:
-      - student_db_data:/var/lib/postgresql/data
-      - ./student_request_review_service/db/reviewsdb.sql:/docker-entrypoint-initdb.d/reviewsdb.sql
+      - "5440:5432"
+    # volumes:
+      # - student_db_data:/var/lib/postgresql/data
+      # - ./student_request_review_service/db/reviewsdb.sql:/docker-entrypoint-initdb.d/reviewsdb.sql
     networks:
       - clearSky-net
 
 # STUDENT REQUEST SERVICE
-  student_service:
-    build: ./student_request_review_service
+  student_request_review_service:
+    build:
+      context: ./student_request_review_service
+      dockerfile: Dockerfile
     depends_on:
       - rabbitmq
       - student_db
@@ -73,15 +77,17 @@ services:
       POSTGRES_PASSWORD: root
       POSTGRES_DB: reviewsdbinst
     ports:
-      - "5433:5432"
-    volumes:
-      - instructor_db_data:/var/lib/postgresql/data
-      - ./instructor_review_reply_service/db/reviewsdb.sql:/docker-entrypoint-initdb.d/reviewsdb.sql
+      - "5441:5432"
+    # volumes:
+    #   - instructor_db_data:/var/lib/postgresql/data
+    #   - ./instructor_review_reply_service/db/reviewsdb.sql:/docker-entrypoint-initdb.d/reviewsdb.sql
     networks:
       - clearSky-net
 # INSTRUCTOR RESPONSE SERVICE
-  instructor_service:
-    build: ./instructor_review_reply_service
+  instructor_review_reply_service:
+    build:
+      context: ./instructor_review_reply_service
+      dockerfile: Dockerfile
     depends_on:
       - rabbitmq
       - instructor_db
@@ -94,40 +100,44 @@ services:
   #credits service! 
   credits_db:
     image: postgres:14
-    container_name: credits_postgres      # unique name!
+    container_name: credits_postgres1
     restart: always
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASS}
-      POSTGRES_DB:   ${DB_NAME}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2002
+      POSTGRES_DB: credits
     volumes:
       - ./credits_service/db-init:/docker-entrypoint-initdb.d:ro
       - credits_pgdata:/var/lib/postgresql/data
     ports:
-      - "5434:5432"
+      - "5442:5432"
+    networks:
+      - clearSky-net
 
   credits_service:
     build:
-      context: .
+      context: ./credits_service
       dockerfile: Dockerfile
     container_name: credits_service
     restart: on-failure
     depends_on:
       - credits_db
       - rabbitmq
-    env_file: .env
+    env_file: ./credits_service/.env
     ports:
       - "8081:8080"
-
-# FRONT END
-frontend:
-    build: ./front-end
-    ports:
-      - "3001:3000"
-    depends_on:
-      - orchestrator
     networks:
-      - clearSky-net
+    - clearSky-net
+
+  # FRONT END
+  frontend:
+      build: ./front-end
+      ports:
+        - "3000:3000"
+      depends_on:
+        - orchestrator
+      networks:
+        - clearSky-net
   
 
 
@@ -139,6 +149,6 @@ networks:
 
 
 volumes:
-  student_db_data:
-  instructor_db_data:
+  # student_db_data:
+  # instructor_db_data:
   credits_pgdata:

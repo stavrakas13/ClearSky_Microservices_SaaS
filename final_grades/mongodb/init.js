@@ -4,14 +4,12 @@ const { MongoClient } = require('mongodb');
 
 async function main() {
   const uri    = process.env.MONGO_URI;
-  const client = new MongoClient(uri, {
-    useNewUrlParser:    true,
-    useUnifiedTopology: true
-  });
+  const client = new MongoClient(process.env.MONGO_URI);
+
 
   try {
     await client.connect();
-    const db = client.db('credits');
+    const db = client.db('final_grades');
 
     // 1) Drop existing collection if any
     const exists = await db.listCollections({ name: 'credits' }).toArray();
