@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -30,9 +31,21 @@ func init() {
 	}
 }
 
+// helper to validate role
+func normalizeRole(r string) string {
+	switch r {
+	case "student", "instructor", "institution_representative":
+		return r
+	default:
+		return "student"
+	}
+}
+
 // Redirects user to Google's consent screen
 func GoogleLoginHandler(w http.ResponseWriter, r *http.Request) {
-	url := oauthConfig.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
+	// allow client to pass desired role on first login
+	role := normalizeRole(r.URL.Query().Get("role"))
+	url := oauthConfig.AuthCodeURL(role, oauth2.AccessTypeOffline) // state carries role
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -66,10 +79,12 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// derive role from state
+	role := normalizeRole(r.URL.Query().Get("state"))
 	jwtToken, err := utils.GenerateJWT(
-		uuid.NewString(),           // userID
-		userInfo["email"].(string), // email
-		"student",                  // default role
+		uuid.NewString(),
+		userInfo["email"].(string),
+		role,
 	)
 	if err != nil {
 		http.Error(w, "Failed to generate JWT: "+err.Error(), http.StatusInternalServerError)
@@ -111,6 +126,15 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		database.DB.Create(&user)
 	}
 	rabbitmq.PublishLoginEvent(email)
+
+	// ─── Upsert into User Management Service ───
+	umsHost := os.Getenv("UMS_URL")
+	if umsHost == "" {
+		umsHost = "http://user_management_service:8082"
+	}
+	up := map[string]string{"email": email, "role": role}
+	buf, _ := json.Marshal(up)
+	http.Post(umsHost+"/upsert", "application/json", bytes.NewBuffer(buf))
 }
 
 // LogoutHandler διαγράφει το token cookie

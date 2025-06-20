@@ -30,10 +30,12 @@ func main() {
 	r := gin.Default()
 	r.POST("/register", handler.Register(db))
 	r.POST("/login", handler.Login(db))
+	r.POST("/upsert", handler.UpsertUser(db)) // ← add this line
 
 	auth := r.Group("/auth")
 	auth.Use(middleware.JWTAuthMiddleware()) // sets user_id, email, role in context
 	auth.GET("/validate", handler.Validate())
+	auth.GET("/profile", handler.Profile(db))
 
 	port := os.Getenv("PORT")
 	if port == "" {
