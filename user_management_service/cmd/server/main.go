@@ -32,7 +32,7 @@ func main() {
 	r.POST("/login", handler.Login(db))
 
 	auth := r.Group("/auth")
-	auth.Use(middleware.JWTAuthMiddleware())
+	auth.Use(middleware.JWTAuthMiddleware()) // sets user_id, email, role in context
 	auth.GET("/validate", handler.Validate())
 
 	port := os.Getenv("PORT")

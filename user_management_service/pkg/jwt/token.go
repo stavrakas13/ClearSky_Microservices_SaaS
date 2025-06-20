@@ -1,12 +1,13 @@
 package jwt
 
 import (
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtKey = []byte("super_secret_key") // Μπορείς να το φορτώνεις από env
+var jwtKey = []byte(os.Getenv("JWT_SECRET")) // Μπορείς να το φορτώνεις από env
 
 type Claims struct {
 	UserID string `json:"user_id"`

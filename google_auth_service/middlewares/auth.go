@@ -18,6 +18,9 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "Unauthorized - invalid token", http.StatusUnauthorized)
 			return
 		}
+		// You can set claims in context if needed
+		// ctx := context.WithValue(r.Context(), "claims", claims)
+		// r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
 	})

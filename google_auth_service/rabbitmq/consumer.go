@@ -9,6 +9,7 @@ import (
 
 	"google_auth_service/utils"
 
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"golang.org/x/oauth2/google"
 )
@@ -66,9 +67,9 @@ func StartGoogleAuthConsumer() {
 				resp.Status = "error"
 				resp.Message = "Invalid Google token"
 			} else {
-				jwt, _ := utils.GenerateJWT(email)
+				token, _ := utils.GenerateJWT(uuid.NewString(), email, "student")
 				resp.Status = "ok"
-				resp.Token = jwt
+				resp.Token = token
 				resp.Email = email
 			}
 			body, _ := json.Marshal(resp)

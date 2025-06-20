@@ -50,8 +50,8 @@ func PublishLoginEvent(email string) {
 	body := `{"event":"user_logged_in","email":"` + email + `"}`
 
 	err := ch.Publish(
-		"user_events", // exchange
-		"",            // routing key (για fanout: κενό)
+		"clearsky.events", // exchange
+		"",                // routing key (fanout)
 		false,
 		false,
 		amqp.Publishing{

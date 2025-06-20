@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/google/uuid"
+
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -64,7 +66,11 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jwtToken, err := utils.GenerateJWT(userInfo["email"].(string))
+	jwtToken, err := utils.GenerateJWT(
+		uuid.NewString(),           // userID
+		userInfo["email"].(string), // email
+		"student",                  // default role
+	)
 	if err != nil {
 		http.Error(w, "Failed to generate JWT: "+err.Error(), http.StatusInternalServerError)
 		return

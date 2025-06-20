@@ -40,30 +40,37 @@ func Init() {
 		log.Fatalf("RabbitMQ channel: %v", err)
 	}
 
-	// 1) Declare the orchestrator's exchange (must match orchestrator config)
+	// 1) Declare the orchestrator.commands exchange for RPC commands
 	if err := Channel.ExchangeDeclare(
-		"clearsky.events", "topic", true, false, false, false, nil,
+		"orchestrator.commands", "topic", true, false, false, false, nil,
 	); err != nil {
-		log.Fatalf("Declare clearsky.events: %v", err)
+		log.Fatalf("Declare orchestrator.commands: %v", err)
 	}
 
-	// 2) Declare and bind the queue for login/register
+	// 2) Declare the clearSky.events exchange for publishing domain events
+	if err := Channel.ExchangeDeclare(
+		"clearSky.events", "topic", true, false, false, false, nil,
+	); err != nil {
+		log.Fatalf("Declare clearSky.events: %v", err)
+	}
+
+	// 3) Declare and bind the auth.request queue to orchestrator.commands
 	queue := "auth.request"
 	if _, err := Channel.QueueDeclare(queue, true, false, false, false, nil); err != nil {
 		log.Fatalf("QueueDeclare %s: %v", queue, err)
 	}
-	for _, key := range []string{"user.login", "user.register"} {
-		if err := Channel.QueueBind(
-			queue, key, "clearsky.events", false, nil,
-		); err != nil {
-			log.Fatalf("QueueBind %s: %v", key, err)
-		}
-	}
-
-	// 3) auth.request queue & bindings for orchestrator integration
 	for _, key := range []string{"auth.register", "auth.login"} {
 		if err := Channel.QueueBind(queue, key, "orchestrator.commands", false, nil); err != nil {
 			log.Fatalf("QueueBind %s → %s: %v", queue, key, err)
+		}
+	}
+
+	// 4) Declare and bind the queue for login/register
+	for _, key := range []string{"user.login", "user.register"} {
+		if err := Channel.QueueBind(
+			queue, key, "clearSky.events", false, nil,
+		); err != nil {
+			log.Fatalf("QueueBind %s: %v", key, err)
 		}
 	}
 }
@@ -76,7 +83,7 @@ func PublishEvent(routingKey string, payload interface{}) {
 		return
 	}
 	err = Channel.Publish(
-		"clearsky.events", // exchange (fixed name)
+		"clearSky.events", // exchange (fixed name)
 		routingKey,        // routing key
 		false, false,
 		amqp.Publishing{

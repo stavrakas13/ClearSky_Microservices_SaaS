@@ -17,5 +17,6 @@ services:
       - "8082:8082"
     depends_on:
       - rabbitmq
+    entrypoint: ["/bin/sh", "-c", "./wait-for-it.sh rabbitmq:5672 -- ./user_management_service"]
     environment:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
