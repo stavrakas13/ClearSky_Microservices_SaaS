@@ -1,17 +1,14 @@
-// _request.js
-/* Centralised fetch helper that prefixes every call with /api */
-
-const API_BASE = '/api'; // ← drop the VITE_GO_API_URL logic here
-export async function request(path, opts = {}) {
-  console.log('→ [API] ', opts.method || 'GET', path);
-  
-}
+const API_BASE = '/api';
 
 export async function request(path, { method = 'GET', body, headers } = {}) {
+  // Debug log every API call
+  console.log('→ [API]', method, path, 'body:', body);
+
   const opts = { method, headers: { ...headers } };
 
   if (body instanceof FormData) {
-    opts.body = body;                         // let the browser set the boundary
+    // let the browser set the multipart boundary
+    opts.body = body;
   } else if (body !== undefined) {
     opts.body    = JSON.stringify(body);
     opts.headers = { 'Content-Type': 'application/json', ...opts.headers };
@@ -21,5 +18,5 @@ export async function request(path, { method = 'GET', body, headers } = {}) {
   const json = await res.json().catch(() => ({}));
 
   if (!res.ok) throw new Error(json.message || res.statusText);
-  return json;                                // backend already wraps in {data:…}
+  return json; // backend wraps responses in { data: … }
 }
