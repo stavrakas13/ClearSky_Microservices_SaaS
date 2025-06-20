@@ -130,6 +130,7 @@ func UploadExcelInit(c *gin.Context, ch *amqp.Channel) {
 			if resp.Status != "ok" {
 				status = http.StatusBadRequest
 			}
+			ForwardToStatistics(ch, buf.Bytes(), file.Filename) //update statistics ms
 			c.JSON(status, resp)
 			return
 		}
@@ -240,7 +241,7 @@ func UploadExcelFinal(c *gin.Context, ch *amqp.Channel) {
 			}
 
 			log.Println("[UploadExcelFinal] Calling HandleCreditsSpent...")
-			if err := HandleCreditsSpent(ch); err != nil {
+			if err := HandleCreditsSpent(ch); err != nil { //update credits ms
 				log.Printf("[UploadExcelFinal] Failed to publish credits spent: %v\n", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"status":  "error",
@@ -251,6 +252,7 @@ func UploadExcelFinal(c *gin.Context, ch *amqp.Channel) {
 			}
 
 			log.Println("[UploadExcelFinal] Upload successful, credits deducted")
+			ForwardToStatistics(ch, buf.Bytes(), file.Filename) //update statistics ms
 			c.JSON(http.StatusOK, gin.H{
 				"status":  resp.Status,
 				"message": "final grades uploaded and credits deducted",

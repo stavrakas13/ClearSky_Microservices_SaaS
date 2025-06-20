@@ -1,45 +1,119 @@
 package handlers
 
-// RabbitMQ handlers for interacting with the stats service. These functions
-// publish exam data or request computed statistics and serve the HTTP endpoints
-// `/stats/persist` and `/stats/distributions` respectively.
-
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// HandlePersistAndCalculate accepts arbitrary JSON describing an exam and the
-// associated grades. The payload is forwarded to RabbitMQ on the
-// `stats.persist_and_calculate` routing key. The stats service will persist the
-// data and perform any heavy calculations asynchronously. This endpoint returns
-// immediately without waiting for a response.
+// submissionLogResponse matches the shape your JS microservice replies with:
+type submissionLogResponse struct {
+	Status  string          `json:"status"`            // "ok" or "error"
+	Message string          `json:"message,omitempty"` // error message
+	Data    json.RawMessage `json:"data,omitempty"`    // actual rows
+}
 
-func HandlePersistAndCalculate(c *gin.Context, ch *amqp.Channel) {
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+// randomCorrelationID generates a random hex string for correlation.
+func randomCorrelationID(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// HandleSubmissionLogs asks the JS microservice for all submission logs
+func HandleSubmissionLogs(c *gin.Context, ch *amqp.Channel) {
+	// 1) Declare a temporary reply queue
+	replyQ, err := ch.QueueDeclare(
+		"",    // let RabbitMQ generate a random name
+		false, // durable
+		true,  // delete when unused
+		true,  // exclusive
+		false, // no-wait
+		nil,   // arguments
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "queue declare failed: " + err.Error()})
 		return
 	}
 
-	body, _ := json.Marshal(payload)
+	msgs, err := ch.Consume(
+		replyQ.Name,
+		"",    // consumer
+		true,  // auto-ack
+		false, // exclusive
+		false, // no-local
+		false, // no-wait
+		nil,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "consume on reply queue failed: " + err.Error()})
+		return
+	}
+
+	// 2) Generate a correlation ID
+	corrID, err := randomCorrelationID(16)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate correlation ID"})
+		return
+	}
+
+	// 3) Publish the request to the same exchange/routing key your JS service listens on
 	if err := ch.Publish(
-		"clearSky.events",
-		"stats.persist_and_calculate",
+		"clearSky.events", // RABBITMQ_EXCHANGE
+		"stats.avail",     // RABBITMQ_SEND_AVAIL_KEY
 		false, false,
-		amqp.Publishing{ContentType: "application/json", Body: body},
+		amqp.Publishing{
+			ContentType:   "application/json",
+			CorrelationId: corrID,
+			ReplyTo:       replyQ.Name,
+			Body:          []byte(`{}`), // or include filters in the JSON body if you want
+		},
 	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "publish failed: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"status": "queued"})
+	// 4) Wait for the matching response (with timeout!)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "timeout waiting for submission logs"})
+			return
+
+		case d := <-msgs:
+			if d.CorrelationId != corrID {
+				continue // not ours, skip
+			}
+
+			var resp submissionLogResponse
+			if err := json.Unmarshal(d.Body, &resp); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid response format"})
+				return
+			}
+
+			if resp.Status != "ok" {
+				c.JSON(http.StatusBadGateway, gin.H{"error": resp.Message})
+				return
+			}
+
+			// Success! return the raw data.
+			c.Data(http.StatusOK, "application/json", resp.Data)
+			return
+		}
+	}
 }
 
 // DistributionRequest represents the payload for fetching grade distributions.
@@ -48,66 +122,145 @@ type DistributionRequest struct {
 	ExamDate string `json:"exam_date"`
 }
 
-// HandleGetDistributions asks the stats service for previously computed grade
-// distributions. It uses a temporary reply queue and waits up to five seconds
-// for the service to respond.
+func ForwardToStatistics(ch *amqp.Channel, fileData []byte, filename string) {
+	log.Println("[ForwardToStatistics] Encoding data for statistics")
 
-func HandleGetDistributions(c *gin.Context, ch *amqp.Channel) {
-	var req DistributionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	// Base64 encode the file contents
+	encoded := base64.StdEncoding.EncodeToString(fileData)
+
+	// Prepare the persistent message
+	msg := amqp.Publishing{
+		ContentType:  "text/plain",
+		DeliveryMode: amqp.Persistent, // ✅ Makes message durable
+		MessageId:    filename,        // Optional metadata
+		Timestamp:    time.Now(),      // Optional timestamp
+		Body:         []byte(encoded),
 	}
 
-	replyQ, err := ch.QueueDeclare("", false, true, true, false, nil)
+	log.Println("[ForwardToStatistics] Publishing to postgrades.statistics")
+
+	// Publish to exchange with the durable routing key
+	err := ch.Publish(
+		"clearSky.events",       // 🔁 Exchange name (must exist and be durable)
+		"postgrades.statistics", // 🎯 Routing key (must match queue binding)
+		false,                   // mandatory
+		false,                   // immediate
+		msg,
+	)
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		log.Printf("[ForwardToStatistics] Failed to publish statistics message: %v\n", err)
+	} else {
+		log.Println("[ForwardToStatistics] Statistics message published successfully")
 	}
+}
 
-	msgs, err := ch.Consume(replyQ.Name, "", true, true, false, false, nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+type rpcResponse struct {
+	Status  string              `json:"status"`
+	Message string              `json:"message,omitempty"`
+	Data    map[string]struct { // e.g. "grade", "Q1"…
+		Categories []int `json:"categories"`
+		Data       []int `json:"data"`
+	} `json:"data,omitempty"`
+}
 
-	corrID := uuid.New().String()
-	body, _ := json.Marshal(req)
+type getGradesRequest struct {
+	Course            string `json:"course"            binding:"required"`
+	DeclarationPeriod string `json:"declarationPeriod" binding:"required"`
+	ClassTitle        string `json:"classTitle"        binding:"required"`
+}
 
-	if err := ch.Publish(
-		"clearSky.events",
-		"stats.get_distributions",
-		false, false,
-		amqp.Publishing{
-			ContentType:   "application/json",
-			CorrelationId: corrID,
-			ReplyTo:       replyQ.Name,
-			Body:          body,
-		},
-	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+// HandleGetGrades is your Gin handler
+func HandleGetGrades(ch *amqp.Channel) gin.HandlerFunc {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	return func(c *gin.Context) {
+		// 1) bind JSON
+		var req getGradesRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
-	for {
-		select {
-		case d := <-msgs:
-			if d.CorrelationId != corrID {
-				continue
-			}
-			var resp interface{}
-			if err := json.Unmarshal(d.Body, &resp); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// 2) declare a temporary reply queue
+		replyQ, err := ch.QueueDeclare(
+			"",    // let RabbitMQ name it
+			false, // durable
+			true,  // delete when unused
+			true,  // exclusive
+			false, // no-wait
+			nil,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "queue declare: " + err.Error()})
+			return
+		}
+
+		msgs, err := ch.Consume(
+			replyQ.Name,
+			"",    // consumer
+			true,  // auto-ack
+			false, // exclusive
+			false, // no-local
+			false, // no-wait
+			nil,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "consume reply queue: " + err.Error()})
+			return
+		}
+
+		// 3) publish the RPC request
+		corrID, err := randomCorrelationID(16)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "generate corrID: " + err.Error()})
+			return
+		}
+
+		body, _ := json.Marshal(req)
+		if err := ch.Publish(
+			"clearSky.events", // exchange
+			"stats.get",       // routing key
+			false, false,
+			amqp.Publishing{
+				ContentType:   "application/json",
+				CorrelationId: corrID,
+				ReplyTo:       replyQ.Name,
+				Body:          body,
+			},
+		); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "publish RPC: " + err.Error()})
+			return
+		}
+
+		// 4) wait for the reply
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		for {
+			select {
+			case <-ctx.Done():
+				c.JSON(http.StatusGatewayTimeout, gin.H{"error": "timeout waiting for grades"})
+				return
+
+			case d := <-msgs:
+				if d.CorrelationId != corrID {
+					continue
+				}
+
+				var resp rpcResponse
+				if err := json.Unmarshal(d.Body, &resp); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "bad RPC response"})
+					return
+				}
+
+				if resp.Status != "ok" {
+					c.JSON(http.StatusBadGateway, gin.H{"error": resp.Message})
+					return
+				}
+
+				c.JSON(http.StatusOK, resp.Data)
 				return
 			}
-			c.JSON(http.StatusOK, resp)
-			return
-		case <-ctx.Done():
-			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "timeout waiting for service"})
-			return
 		}
 	}
 }

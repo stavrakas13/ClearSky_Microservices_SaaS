@@ -1,20 +1,18 @@
-FROM golang:1.23-alpine
+# Dockerfile
+FROM node:20-alpine
 
-# Δημιουργία working directory
-WORKDIR /app
+# 1. Create app directory
+WORKDIR /usr/src/app
 
-# Αντιγραφή των go.mod και go.sum πρώτα για caching
-COPY go.mod go.sum ./
-RUN go mod download
+# 2. Install dependencies
+COPY package.json package-lock.json ./
+RUN npm ci --production
 
-# Αντιγραφή του υπόλοιπου κώδικα
+# 3. Copy source
 COPY . .
 
-# Compile της εφαρμογής
-RUN go build -o app
+# 4. Expose nothing (consumer only), set default ENV
+ENV NODE_ENV=production
 
-# Άνοιγμα του port
-EXPOSE 8080
-
-# Εκκίνηση της εφαρμογής
-CMD ["./app"]
+# 5. Default command: run consumer
+CMD ["node", "grades_consumer.js"]

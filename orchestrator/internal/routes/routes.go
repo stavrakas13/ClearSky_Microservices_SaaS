@@ -31,15 +31,18 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 
 	// Shared stats endpoints (all roles)
 	stats := r.Group("/stats")
-	stats.Use(mw.JWTAuthMiddleware())
-	{
-		stats.POST("/persist", func(c *gin.Context) {
-			handlers.HandlePersistAndCalculate(c, ch)
-		})
-		stats.POST("/distributions", func(c *gin.Context) {
-			handlers.HandleGetDistributions(c, ch)
-		})
-	}
+	// stats.Use(mw.JWTAuthMiddleware())
+	// {
+	stats.GET("/available", func(c *gin.Context) {
+		handlers.HandleSubmissionLogs(c, ch)
+	})
+	stats.GET("/courses", func(c *gin.Context) {
+		handlers.HandleSubmissionLogs(c, ch)
+	})
+	// stats.GET("/distributions", func(c *gin.Context) {
+	// 	handlers.HandleGetDistributions(c, ch)
+	// })
+	// }
 
 	// Institution‐representative only
 	inst := r.Group("/")
@@ -58,21 +61,21 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 
 	// Instructor only
 	instr := r.Group("/")
-	instr.Use(mw.JWTAuthMiddleware(), RoleCheck("instructor"))
-	{
-		instr.POST("/upload_init", func(c *gin.Context) {
-			handlers.UploadExcelInit(c, ch)
-		})
-		instr.PATCH("/postFinalGrades", func(c *gin.Context) {
-			handlers.UploadExcelFinal(c, ch)
-		})
-		instr.PATCH("/instructor/review-list", func(c *gin.Context) {
-			handlers.HandleGetRequestList(c, ch)
-		})
-		instr.PATCH("/instructor/reply", func(c *gin.Context) {
-			handlers.HandlePostResponse(c, ch)
-		})
-	}
+	// instr.Use(mw.JWTAuthMiddleware(), RoleCheck("instructor"))
+	// {
+	instr.POST("/upload_init", func(c *gin.Context) {
+		handlers.UploadExcelInit(c, ch)
+	})
+	instr.PATCH("/postFinalGrades", func(c *gin.Context) {
+		handlers.UploadExcelFinal(c, ch)
+	})
+	instr.PATCH("/instructor/review-list", func(c *gin.Context) {
+		handlers.HandleGetRequestList(c, ch)
+	})
+	instr.PATCH("/instructor/reply", func(c *gin.Context) {
+		handlers.HandlePostResponse(c, ch)
+	})
+	// }
 
 	// Student only
 	std := r.Group("/")
