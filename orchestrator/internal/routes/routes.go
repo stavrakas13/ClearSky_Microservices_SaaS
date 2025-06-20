@@ -2,6 +2,7 @@ package routes
 
 import (
 	"orchestrator/internal/handlers"
+	mw "orchestrator/internal/middleware"
 
 	"time"
 
@@ -23,88 +24,96 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	// 16 MiB in-memory before spilling to /tmp
 	r.MaxMultipartMemory = 16 << 20 // 16 MiB
 
-	r.PATCH("/purchase", func(c *gin.Context) {
-		handlers.HandleCreditsPurchased(c, ch)
-	})
+	// Shared stats endpoints (all roles)
+	stats := r.Group("/stats")
+	stats.Use(mw.JWTAuthMiddleware())
+	{
+		stats.POST("/persist", func(c *gin.Context) {
+			handlers.HandlePersistAndCalculate(c, ch)
+		})
+		stats.POST("/distributions", func(c *gin.Context) {
+			handlers.HandleGetDistributions(c, ch)
+		})
+	}
 
-	r.GET("/mycredits", func(c *gin.Context) {
-		handlers.HandleCreditsAvail(c, ch)
-	})
+	// Institution‐representative only
+	inst := r.Group("/")
+	inst.Use(mw.JWTAuthMiddleware(), RoleCheck("institution_representative"))
+	{
+		inst.POST("/registration", func(c *gin.Context) {
+			handlers.HandleInstitutionRegistered(c, ch)
+		})
+		inst.PATCH("/purchase", func(c *gin.Context) {
+			handlers.HandleCreditsPurchased(c, ch)
+		})
+		inst.GET("/mycredits", func(c *gin.Context) {
+			handlers.HandleCreditsAvail(c, ch)
+		})
+	}
 
-	r.PATCH("/postFinalGrades", func(c *gin.Context) {
-		handlers.UploadExcelFinal(c, ch)
+	// Instructor only
+	instr := r.Group("/")
+	instr.Use(mw.JWTAuthMiddleware(), RoleCheck("instructor"))
+	{
+		instr.POST("/upload_init", func(c *gin.Context) {
+			handlers.UploadExcelInit(c, ch)
+		})
+		instr.PATCH("/postFinalGrades", func(c *gin.Context) {
+			handlers.UploadExcelFinal(c, ch)
+		})
+		instr.PATCH("/instructor/review-list", func(c *gin.Context) {
+			handlers.HandleGetRequestList(c, ch)
+		})
+		instr.PATCH("/instructor/reply", func(c *gin.Context) {
+			handlers.HandlePostResponse(c, ch)
+		})
+	}
 
-		// when post final grades, call view grades too.
-		handlers.UploadFinalGradesInViewGrades(c, ch)
-	})
+	// Student only
+	std := r.Group("/")
+	std.Use(mw.JWTAuthMiddleware(), RoleCheck("student"))
+	{
+		std.POST("/personal/courses", func(c *gin.Context) {
+			handlers.HandleGetStudentCourses(c, ch)
+		})
+		std.POST("/personal/grades", func(c *gin.Context) {
+			handlers.HandleGetPersonalGrades(c, ch)
+		})
+		std.PATCH("/student/reviewRequest", func(c *gin.Context) {
+			handlers.HandlePostNewRequest(c, ch)
+		})
+		std.PATCH("/student/status", func(c *gin.Context) {
+			handlers.HandleGetRequestStatus(c, ch)
+		})
+	}
 
-	r.POST("/registration", func(c *gin.Context) {
-		handlers.HandleInstitutionRegistered(c, ch)
-	})
-
-	r.POST("/upload_init", func(c *gin.Context) {
-		handlers.UploadExcelInit(c, ch)
-
-		// when post init grades, call view grades too.
-		handlers.UploadInitGradesInViewGrades(c, ch)
-	})
-
-	r.POST("/stats/persist", func(c *gin.Context) {
-		handlers.HandlePersistAndCalculate(c, ch)
-	})
-	r.POST("/stats/distributions", func(c *gin.Context) {
-		handlers.HandleGetDistributions(c, ch)
-	})
-
-	r.POST("/personal/courses", func(c *gin.Context) {
-		// Expects JSON body with user_id -> Returns JSON body with list of courses like {course_name, course_id, exam_period, grading_status}
-		handlers.HandleGetStudentCourses(c, ch)
-	})
-	r.POST("/personal/grades", func(c *gin.Context) {
-		// Expects JSON body with {user_id, course_id, exam_period} -> Returns JSON body with list of grades like {course_name, course_id, exam_period, total, Q1, Q2, ..., Q10}
-		handlers.HandleGetPersonalGrades(c, ch)
-	})
-
-	// Student and Instructor API calls.
-
-	r.PATCH("/student/reviewRequest", func(c *gin.Context) {
-		// Calls HandlePostNewRequest:
-		//   Expects JSON body {course_id, user_id, student_message, exam_period}
-		//   Returns JSON: {"data": map[string]interface{}} where data is the service response
-		handlers.HandlePostNewRequest(c, ch)
-	})
-	r.PATCH("/student/status", func(c *gin.Context) {
-		// Calls HandleGetRequestStatus:
-		//   Expects JSON body {course_id, user_id, exam_period}
-		//   Returns JSON: {"data": map[string]interface{}} containing status details
-		handlers.HandleGetRequestStatus(c, ch)
-	})
-	r.PATCH("/instructor/review-list", func(c *gin.Context) {
-		// Calls HandleGetRequestList:
-		//   Expects JSON body {course_id, exam_period}
-		//   Returns JSON: {"data": map[string]interface{}} listing pending reviews
-		handlers.HandleGetRequestList(c, ch)
-	})
-	r.PATCH("/instructor/reply", func(c *gin.Context) {
-		// Calls HandlePostResponse:
-		//   Expects JSON body {course_id, user_id, exam_period, instructor_reply_message, instructor_action}
-		//   Returns JSON: {"data": map[string]interface{}} acknowledgments from services
-		handlers.HandlePostResponse(c, ch)
-	})
-
-	// User Management Endpoints
-	r.POST("/user/register", func(c *gin.Context) {
-		handlers.HandleUserRegister(c, ch)
-	})
-	r.POST("/user/login", func(c *gin.Context) {
-		handlers.HandleUserLogin(c, ch)
-	})
-	r.DELETE("/user/delete", func(c *gin.Context) {
-		handlers.HandleUserDelete(c, ch)
-	})
-	r.POST("/user/google-login", func(c *gin.Context) {
-		handlers.HandleUserGoogleLogin(c, ch)
-	})
+	// Public User‐management (no JWT)
+	{
+		r.POST("/user/register", func(c *gin.Context) {
+			handlers.HandleUserRegister(c, ch)
+		})
+		r.POST("/user/login", func(c *gin.Context) {
+			handlers.HandleUserLogin(c, ch)
+		})
+		r.DELETE("/user/delete", func(c *gin.Context) {
+			handlers.HandleUserDelete(c, ch)
+		})
+		r.POST("/user/google-login", func(c *gin.Context) {
+			handlers.HandleUserGoogleLogin(c, ch)
+		})
+	}
 
 	return r
+}
+
+// RoleCheck ensures the JWT role claim matches
+func RoleCheck(role string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetString("role") != role {
+			c.JSON(403, gin.H{"error": "forbidden"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
 }

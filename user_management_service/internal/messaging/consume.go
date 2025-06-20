@@ -13,10 +13,12 @@ import (
 )
 
 type AuthRequest struct {
-	Type     string `json:"type"` // "register" ή "login"
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Role     string `json:"role,omitempty"` // add this field
+	Type        string `json:"type"` // "register", "login", "delete", "change_password"
+	Email       string `json:"email"`
+	Password    string `json:"password,omitempty"` // for login/register
+	Role        string `json:"role,omitempty"`
+	OldPassword string `json:"old_password,omitempty"` // for change_password
+	NewPassword string `json:"new_password,omitempty"`
 }
 
 type AuthResponse struct {
@@ -54,7 +56,9 @@ func ConsumeAuthQueue(db *gorm.DB) {
 			case "login":
 				resp = handleLogin(db, req)
 			case "delete":
-				resp = handleDelete(db, req) // add this line
+				resp = handleDelete(db, req)
+			case "change_password":
+				resp = handleChangePassword(db, req)
 			default:
 				log.Println("Unknown auth type:", req.Type)
 				resp = AuthResponse{Status: "error", Message: "Unknown auth type"}
@@ -142,4 +146,23 @@ func handleDelete(db *gorm.DB, req AuthRequest) AuthResponse {
 	return AuthResponse{
 		Status: "ok",
 	}
+}
+
+func handleChangePassword(db *gorm.DB, req AuthRequest) AuthResponse {
+	var user model.User
+	if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		return AuthResponse{Status: "error", Message: "User not found"}
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+		return AuthResponse{Status: "error", Message: "Invalid current password"}
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return AuthResponse{Status: "error", Message: "Failed to hash new password"}
+	}
+	user.PasswordHash = string(hash)
+	if err := db.Save(&user).Error; err != nil {
+		return AuthResponse{Status: "error", Message: "Failed to update password"}
+	}
+	return AuthResponse{Status: "ok"}
 }

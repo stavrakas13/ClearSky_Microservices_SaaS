@@ -148,6 +148,32 @@ func HandleUserGoogleLogin(c *gin.Context, ch *amqp.Channel) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// Change user password via RPC
+func HandleUserChangePassword(c *gin.Context, ch *amqp.Channel) {
+	var req struct {
+		Email       string `json:"email" binding:"required"`
+		OldPassword string `json:"old_password" binding:"required"`
+		NewPassword string `json:"new_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload := map[string]interface{}{
+		"type":         "change_password",
+		"email":        req.Email,
+		"old_password": req.OldPassword,
+		"new_password": req.NewPassword,
+	}
+	resp, err := rpcRequest(ch, "orchestrator.commands", "auth.change_password", payload)
+	if err != nil {
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
 // HandleUserCreated is a dummy handler that logs and ACKs the message.
 func HandleUserCreated(d amqp.Delivery) {
 	log.Printf("[Handler] user.created received: %s", string(d.Body))

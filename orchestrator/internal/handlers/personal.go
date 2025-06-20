@@ -23,18 +23,20 @@ func UploadFinalGradesInViewGrades(c *gin.Context, ch *amqp.Channel) {}
 
 func HandleGetStudentCourses(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
-		StudentID string `json:"student_id"`
+		CourseID int    `json:"class_id"`
+		ExamDate string `json:"exam_date"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Marshal the request and publish it to the RPC queue. helperRequest takes
-	// care of waiting for the reply and unmarshalling the JSON response.
-
-	payload, _ := json.Marshal(req)
-	resp, err := helperRequest(ch, "personal.get_courses", payload)
+	studentID := c.GetString("user_id") // from JWT middleware
+	payload := map[string]interface{}{  // build own‐ID payload
+		"student_id": studentID,
+	}
+	body, _ := json.Marshal(payload)
+	resp, err := helperRequest(ch, "personal.get_courses", body)
 	if err != nil {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
@@ -47,17 +49,22 @@ func HandleGetStudentCourses(c *gin.Context, ch *amqp.Channel) {
 
 func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
-		CourseID  int    `json:"class_id"`
-		ExamDate  string `json:"exam_date"`
-		StudentID string `json:"student_id"`
+		CourseID int    `json:"class_id"`
+		ExamDate string `json:"exam_date"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	payload, _ := json.Marshal(req)
-	resp, err := helperRequest(ch, "personal.get_grades", payload)
+	studentID := c.GetString("user_id") // enforce own ID
+	payload := map[string]interface{}{
+		"class_id":   req.CourseID,
+		"exam_date":  req.ExamDate,
+		"student_id": studentID,
+	}
+	body, _ := json.Marshal(payload)
+	resp, err := helperRequest(ch, "personal.get_grades", body)
 	if err != nil {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return

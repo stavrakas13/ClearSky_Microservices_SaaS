@@ -59,7 +59,7 @@ func Init() {
 	if _, err := Channel.QueueDeclare(queue, true, false, false, false, nil); err != nil {
 		log.Fatalf("QueueDeclare %s: %v", queue, err)
 	}
-	for _, key := range []string{"auth.register", "auth.login"} {
+	for _, key := range []string{"auth.register", "auth.login", "auth.delete", "auth.change_password"} {
 		if err := Channel.QueueBind(queue, key, "orchestrator.commands", false, nil); err != nil {
 			log.Fatalf("QueueBind %s → %s: %v", queue, key, err)
 		}
