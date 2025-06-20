@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
 
-# RABBIT MQ SHARED BETWEEN ALL THE SERVICES
+  # RABBIT MQ SHARED BETWEEN ALL THE SERVICES
   rabbitmq:
     image: rabbitmq:3-management
     restart: always
@@ -36,7 +36,7 @@ services:
     networks:
       - clearSky-net
 
-# STUDENT REQUEST DB
+  # STUDENT REQUEST DB
   student_db:
     image: postgres:15
     restart: always
@@ -52,7 +52,7 @@ services:
     networks:
       - clearSky-net
 
-# STUDENT REQUEST SERVICE
+  # STUDENT REQUEST SERVICE
   student_request_review_service:
     build:
       context: ./student_request_review_service
@@ -62,14 +62,12 @@ services:
       - rabbitmq
       - student_db
     environment:
-      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
-      DATABASE_URL: postgres://postgres:root@student_db:5432/reviewsdb?sslmode=disable
-
+      - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
+      - DATABASE_URL=postgres://postgres:root@student_db:5432/reviewsdb?sslmode=disable
     networks:
       - clearSky-net
 
-# INSTRUCTOR DB
-
+  # INSTRUCTOR DB
   instructor_db:
     image: postgres:15
     restart: always
@@ -85,7 +83,7 @@ services:
     networks:
       - clearSky-net
 
-# INSTRUCTOR RESPONSE SERVICE
+  # INSTRUCTOR RESPONSE SERVICE
   instructor_review_reply_service:
     build:
       context: ./instructor_review_reply_service
@@ -95,12 +93,12 @@ services:
       - rabbitmq
       - instructor_db
     environment:
-      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
-      DATABASE_URL: postgres://postgres:root@instructor_db:5432/reviewsdbinst?sslmode=disable    
+      - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
+      - DATABASE_URL=postgres://postgres:root@instructor_db:5432/reviewsdbinst?sslmode=disable
     networks:
       - clearSky-net
 
-  #credits service! 
+  # CREDITS SERVICE DB
   credits_db:
     image: postgres:14
     container_name: credits_postgres1
@@ -117,6 +115,7 @@ services:
     networks:
       - clearSky-net
 
+  # CREDITS SERVICE
   credits_service:
     build:
       context: ./credits_service
@@ -130,24 +129,27 @@ services:
     ports:
       - "8081:8080"
     networks:
-    - clearSky-net
+      - clearSky-net
 
   # FRONT END
   frontend:
-      build: ./front-end
-      ports:
-        - "3000:3000"
-      depends_on:
-        - orchestrator
-      networks:
-        - clearSky-net
+    build: ./front-end
+    ports:
+      - "3000:3000"
+    depends_on:
+      - orchestrator
+    environment:
+      - GO_API_URL=http://orchestrator:8080
+    networks:
+      - clearSky-net
 
+  # USER MANAGEMENT SERVICE
   user_management_service:
     build:
       context: ./user_management_service
       dockerfile: Dockerfile
     container_name: user_management_service
-    restart: always    
+    restart: always
     ports:
       - "8082:8082"
     depends_on:
@@ -157,12 +159,13 @@ services:
     networks:
       - clearSky-net
 
+  # GOOGLE AUTH SERVICE
   google_auth_service:
     build:
       context: ./google_auth_service
       dockerfile: Dockerfile
     container_name: google_auth_service_app
-    restart: always    
+    restart: always
     ports:
       - "8086:8086"
     depends_on:
@@ -175,7 +178,6 @@ services:
 networks:
   clearSky-net:
     driver: bridge
-
 
 volumes:
   student_db_data:
