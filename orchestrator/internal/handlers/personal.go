@@ -5,69 +5,142 @@ package handlers
 // service using RPC-style messaging.
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 // When upload grades, update view grades too.
 
-func UploadInitGradesInViewGrades(c *gin.Context, ch *amqp.Channel)  {}
-func UploadFinalGradesInViewGrades(c *gin.Context, ch *amqp.Channel) {}
+func ForwardToView(ch *amqp.Channel, fileData []byte, filename string) {
+	log.Println("[ForwardToStatistics] Encoding data for statistics")
 
-// HandleGetStudentCourses receives a JSON body containing a `student_id`,
-// forwards the request over RabbitMQ and returns whatever payload the personal
-// grades service responds with.
+	// Base64 encode the file contents
+	encoded := base64.StdEncoding.EncodeToString(fileData)
 
-func HandleGetStudentCourses(c *gin.Context, ch *amqp.Channel) {
-	var req struct {
-		CourseID int    `json:"class_id"`
-		ExamDate string `json:"exam_date"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	// Prepare the persistent message
+	msg := amqp.Publishing{
+		ContentType:  "text/plain",
+		DeliveryMode: amqp.Persistent, // ✅ Makes message durable
+		MessageId:    filename,        // Optional metadata
+		Timestamp:    time.Now(),      // Optional timestamp
+		Body:         []byte(encoded),
 	}
 
-	studentID := c.GetString("user_id") // from JWT middleware
-	payload := map[string]interface{}{  // build own‐ID payload
-		"student_id": studentID,
-	}
-	body, _ := json.Marshal(payload)
-	resp, err := helperRequest(ch, "personal.get_courses", body)
+	log.Println("[ForwardToStatistics] Publishing to postgrades.statistics")
+
+	// Publish to exchange with the durable routing key
+	err := ch.Publish(
+		"clearSky.events", // 🔁 Exchange name (must exist and be durable)
+		"postgrades.view", // 🎯 Routing key (must match queue binding)
+		false,             // mandatory
+		false,             // immediate
+		msg,
+	)
+
 	if err != nil {
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
-		return
+		log.Printf("[ForwardToStatistics] Failed to publish statistics message: %v\n", err)
+	} else {
+		log.Println("[ForwardToStatistics] Statistics message published successfully")
 	}
-	c.JSON(http.StatusOK, gin.H{"data": resp})
 }
 
-// HandleGetPersonalGrades does the same as HandleGetStudentCourses but expects
-// class ID and exam date to look up the student's grades in a particular exam.
-
 func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
+	log.Println("[HandleGetGradesByAM] → entered")
+
+	// 1. Bind request
 	var req struct {
-		CourseID int    `json:"class_id"`
-		ExamDate string `json:"exam_date"`
+		AM string `json:"AM" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		log.Printf("[HandleGetGradesByAM] ❌ bind error: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing or invalid AM"})
+		return
+	}
+	log.Printf("[HandleGetGradesByAM] 📥 request for AM: %s", req.AM)
+
+	// 2. Declare reply queue
+	replyQ, err := ch.QueueDeclare(
+		"", false, true, true, false, nil,
+	)
+	if err != nil {
+		log.Printf("[HandleGetGradesByAM] ❌ failed to declare reply queue: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create reply queue"})
 		return
 	}
 
-	studentID := c.GetString("user_id") // enforce own ID
-	payload := map[string]interface{}{
-		"class_id":   req.CourseID,
-		"exam_date":  req.ExamDate,
-		"student_id": studentID,
-	}
-	body, _ := json.Marshal(payload)
-	resp, err := helperRequest(ch, "personal.get_grades", body)
+	// 3. Start consuming
+	msgs, err := ch.Consume(
+		replyQ.Name, "", true, true, false, false, nil,
+	)
 	if err != nil {
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
+		log.Printf("[HandleGetGradesByAM] ❌ failed to consume: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to consume reply"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": resp})
+
+	// 4. Publish request
+	corrID := uuid.New().String()
+	body, _ := json.Marshal(req)
+	err = ch.Publish(
+		"clearSky.events", // Exchange
+		"view.avail",
+		false, false,
+		amqp.Publishing{
+			ContentType:   "application/json",
+			CorrelationId: corrID,
+			ReplyTo:       replyQ.Name,
+			Body:          body,
+		},
+	)
+	if err != nil {
+		log.Printf("[HandleGetGradesByAM] ❌ publish failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to publish request"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("[HandleGetGradesByAM] ⏰ timeout waiting for reply")
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "Service timeout"})
+			return
+
+		case d := <-msgs:
+			if d.CorrelationId != corrID {
+				log.Printf("[HandleGetGradesByAM] 🔍 ignoring message with corrID=%s", d.CorrelationId)
+				continue
+			}
+
+			var gradesResp struct {
+				Status string        `json:"status"`
+				Data   []interface{} `json:"data"` // Use appropriate struct if you know the shape
+				Error  string        `json:"error,omitempty"`
+			}
+
+			if err := json.Unmarshal(d.Body, &gradesResp); err != nil {
+				log.Printf("[HandleGetGradesByAM] ❌ unmarshal failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response format"})
+				return
+			}
+
+			statusCode := http.StatusOK
+			if gradesResp.Status != "ok" {
+				statusCode = http.StatusBadRequest
+			}
+
+			c.JSON(statusCode, gradesResp)
+			return
+		}
+	}
 }

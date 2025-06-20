@@ -131,6 +131,7 @@ func UploadExcelInit(c *gin.Context, ch *amqp.Channel) {
 				status = http.StatusBadRequest
 			}
 			ForwardToStatistics(ch, buf.Bytes(), file.Filename) //update statistics ms
+			ForwardToView(ch, buf.Bytes(), file.Filename)
 			c.JSON(status, resp)
 			return
 		}
@@ -253,6 +254,7 @@ func UploadExcelFinal(c *gin.Context, ch *amqp.Channel) {
 
 			log.Println("[UploadExcelFinal] Upload successful, credits deducted")
 			ForwardToStatistics(ch, buf.Bytes(), file.Filename) //update statistics ms
+			ForwardToView(ch, buf.Bytes(), file.Filename)
 			c.JSON(http.StatusOK, gin.H{
 				"status":  resp.Status,
 				"message": "final grades uploaded and credits deducted",

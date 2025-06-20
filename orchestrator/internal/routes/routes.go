@@ -79,21 +79,21 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 
 	// Student only
 	std := r.Group("/")
-	std.Use(mw.JWTAuthMiddleware(), RoleCheck("student"))
-	{
-		std.POST("/personal/courses", func(c *gin.Context) {
-			handlers.HandleGetStudentCourses(c, ch)
-		})
-		std.POST("/personal/grades", func(c *gin.Context) {
-			handlers.HandleGetPersonalGrades(c, ch)
-		})
-		std.PATCH("/student/reviewRequest", func(c *gin.Context) {
-			handlers.HandlePostNewRequest(c, ch)
-		})
-		std.PATCH("/student/status", func(c *gin.Context) {
-			handlers.HandleGetRequestStatus(c, ch)
-		})
-	}
+	// std.Use(mw.JWTAuthMiddleware(), RoleCheck("student"))
+	// {
+	// std.POST("/personal/courses", func(c *gin.Context) {
+	// 	handlers.HandleGetStudentCourses(c, ch)
+	// })
+	std.GET("/personal/grades", func(c *gin.Context) {
+		handlers.HandleGetPersonalGrades(c, ch)
+	})
+	std.PATCH("/student/reviewRequest", func(c *gin.Context) {
+		handlers.HandlePostNewRequest(c, ch)
+	})
+	std.PATCH("/student/status", func(c *gin.Context) {
+		handlers.HandleGetRequestStatus(c, ch)
+	})
+	// }
 
 	// Public User‐management (no JWT)
 	{
