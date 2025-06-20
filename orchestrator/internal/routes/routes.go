@@ -33,6 +33,9 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 
 	r.PATCH("/postFinalGrades", func(c *gin.Context) {
 		handlers.UploadExcelFinal(c, ch)
+
+		// when post final grades, call view grades too.
+		handlers.UploadFinalGradesInViewGrades(c, ch)
 	})
 
 	r.POST("/registration", func(c *gin.Context) {
@@ -41,6 +44,9 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 
 	r.POST("/upload_init", func(c *gin.Context) {
 		handlers.UploadExcelInit(c, ch)
+
+		// when post init grades, call view grades too.
+		handlers.UploadInitGradesInViewGrades(c, ch)
 	})
 
 	r.POST("/stats/persist", func(c *gin.Context) {
@@ -51,9 +57,11 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	})
 
 	r.POST("/personal/courses", func(c *gin.Context) {
+		// Expects JSON body with user_id -> Returns JSON body with list of courses like {course_name, course_id, exam_period, grading_status}
 		handlers.HandleGetStudentCourses(c, ch)
 	})
 	r.POST("/personal/grades", func(c *gin.Context) {
+		// Expects JSON body with {user_id, course_id, exam_period} -> Returns JSON body with list of grades like {course_name, course_id, exam_period, total, Q1, Q2, ..., Q10}
 		handlers.HandleGetPersonalGrades(c, ch)
 	})
 

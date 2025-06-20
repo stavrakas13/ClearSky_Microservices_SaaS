@@ -14,6 +14,7 @@ import (
 
 // StudentCourseInfo είναι η δομή που θα επιστραφεί, ταιριάζοντας με το JSON του frontend
 // (εκτός του reviewRequested που θα προστεθεί από τον orchestrator).
+
 type StudentCourseInfo struct {
 	Name       string `json:"name"`       // Θα είναι το ClassID
 	ExamPeriod string `json:"examPeriod"` // Θα είναι το ExamDate
