@@ -2,12 +2,22 @@ package middleware
 
 import (
 	"net/http"
+	"os"
 	"strings"
 
-	jwtutil "user_management_service/pkg/jwt"
-
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
+
+// JWT secret key from env
+var jwtKey = []byte(os.Getenv("JWT_SECRET"))
+
+type Claims struct {
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+	Role   string `json:"role"`
+	jwt.RegisteredClaims
+}
 
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -25,8 +35,12 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		claims, err := jwtutil.ParseToken(parts[1])
-		if err != nil {
+		tokenStr := parts[1]
+		claims := &Claims{}
+		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtKey, nil
+		})
+		if err != nil || !token.Valid {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			c.Abort()
 			return
