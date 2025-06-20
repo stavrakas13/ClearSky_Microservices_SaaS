@@ -11,19 +11,19 @@ import (
 )
 
 func SetupRouter(ch *amqp.Channel) *gin.Engine {
-    r := gin.Default()
+	r := gin.Default()
 
-    r.Use(cors.New(cors.Config{
-        AllowOrigins: []string{
-            "http://localhost:3000",     
-            "http://localhost:5173",
-            "https://frontend.example.com",
-        },
-        AllowMethods:     []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
-        AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-        AllowCredentials: true,           // if you rely on cookies or auth headers
-        MaxAge:           12 * time.Hour,
-    }))
+	r.Use(cors.New(cors.Config{
+		AllowOrigins: []string{
+			"http://localhost:3000",
+			"http://localhost:5173",
+			"https://frontend.example.com",
+		},
+		AllowMethods:     []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowCredentials: true, // if you rely on cookies or auth headers
+		MaxAge:           12 * time.Hour,
+	}))
 
 	// 16 MiB in-memory before spilling to /tmp
 	r.MaxMultipartMemory = 16 << 20 // 16 MiB
@@ -54,12 +54,13 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		handlers.UploadInitGradesInViewGrades(c, ch)
 	})
 
-	r.POST("/stats/persist", func(c *gin.Context) {
+	r.GET("/stats", func(c *gin.Context) {
 		handlers.HandlePersistAndCalculate(c, ch)
 	})
-	r.POST("/stats/distributions", func(c *gin.Context) {
-		handlers.HandleGetDistributions(c, ch)
-	})
+	// })
+	// r.POST("/stats/distributions", func(c *gin.Context) {
+	// 	handlers.HandleGetDistributions(c, ch)
+	// })
 
 	r.POST("/personal/courses", func(c *gin.Context) {
 		// Expects JSON body with user_id -> Returns JSON body with list of courses like {course_name, course_id, exam_period, grading_status}
