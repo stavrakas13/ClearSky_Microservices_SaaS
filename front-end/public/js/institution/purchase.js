@@ -1,19 +1,30 @@
 import { flash } from '../../script.js';
 import { purchaseCredits } from '../../api/credits.js';
 
+console.log('🛠️ purchase.js loaded');
+
 const form = document.querySelector('#purchase-form');
-form.addEventListener('submit', async e => {
-  e.preventDefault();
+console.log('🛠️ purchase form element:', form);
 
-  // Διάβασε το instName και απόφυγε κενά
-  const instName = form.instName.value.trim();
-  const amount   = Number(form.amount.value);
+if (!form) {
+  console.error('⚠️ #purchase-form not found!');
+} else {
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    console.log('🛠️ submit event fired');
 
-  try {
-    // Στείλε το σωστό πεδίο name στο backend
-    const { data } = await purchaseCredits({ name: instName, amount });
-    flash(`Purchased! New balance: ${data.balance}`);
-  } catch (err) {
-    flash(err.message);
-  }
-});
+    const instName = form.instName.value.trim();
+    const amount   = Number(form.amount.value);
+    console.log('🛠️ form values:', { instName, amount });
+
+    try {
+      const response = await purchaseCredits({ name: instName, amount });
+      console.log('🛠️ API response:', response);
+      const { data } = response;
+      flash(`Purchased! New balance: ${data.balance}`);
+    } catch (err) {
+      console.error('🛠️ purchaseCredits error:', err);
+      flash(err.message);
+    }
+  });
+}
