@@ -15,7 +15,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GO_API_URL=http://orchestrator:8080   # άλλαξε σε 8080
+      - GO_API_URL=http://orchestrator:8080  
     depends_on:
       - orchestrator
     networks:

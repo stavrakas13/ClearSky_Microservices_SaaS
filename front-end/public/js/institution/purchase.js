@@ -1,22 +1,18 @@
 import { flash } from '../../script.js';
+import { purchaseCredits } from '../../api/credits.js';
 
 const form = document.querySelector('#purchase-form');
 form.addEventListener('submit', async e => {
   e.preventDefault();
 
-  const instName = form.instName.value;
+  // Διάβασε το instName και απόφυγε κενά
+  const instName = form.instName.value.trim();
   const amount   = Number(form.amount.value);
 
   try {
-    const res = await fetch('/api/purchase', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: instName, amount }),
-    });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.message || res.statusText);
-
-    flash(`Purchased ${amount} credits for ${instName}! New balance: ${body.data.balance}`);
+    // Στείλε το σωστό πεδίο name στο backend
+    const { data } = await purchaseCredits({ name: instName, amount });
+    flash(`Purchased! New balance: ${data.balance}`);
   } catch (err) {
     flash(err.message);
   }

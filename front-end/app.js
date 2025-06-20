@@ -26,7 +26,7 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // 2) Proxy only /api/* → Go backend
-const API_TARGET = process.env.GO_API_URL || 'http://localhost:3001';
+const API_TARGET = process.env.GO_API_URL || 'http://localhost:8080';
 
 app.use(
   '/api',
