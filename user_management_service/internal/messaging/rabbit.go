@@ -49,7 +49,7 @@ func Init() {
 
 	// 2) Declare the clearSky.events exchange for publishing domain events
 	if err := Channel.ExchangeDeclare(
-		"clearSky.events", "topic", true, false, false, false, nil,
+		"clearSky.events", "direct", true, false, false, false, nil,
 	); err != nil {
 		log.Fatalf("Declare clearSky.events: %v", err)
 	}
