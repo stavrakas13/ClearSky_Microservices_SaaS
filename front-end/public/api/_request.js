@@ -1,7 +1,7 @@
 // file: front-end/public/api/_request.js
 
 // Base URL of your Go API
-const API_BASE = window.GO_API_URL || 'http://localhost:8080';
+const API_BASE = 'http://orchestrator:8080';
 
 export async function request(path, { method = 'GET', body, headers } = {}) {
   console.log('→ [API]', method, path, 'body:', body);

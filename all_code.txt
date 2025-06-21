@@ -2,109 +2,37 @@ Collecting frontend code...
 =========================
 
 ===== front-end/app.js =====
-// file: front-end/app.js
-import express                   from 'express';
-import session                   from 'express-session';
-import bodyParser                from 'body-parser';
-import path                      from 'path';
-import { fileURLToPath }         from 'url';
-import { createProxyMiddleware } from 'http-proxy-middleware';
-import morgan                    from 'morgan';
+// front-end/app.js
+import express           from 'express';
+import session           from 'express-session';
+import path              from 'path';
+import { fileURLToPath } from 'url';
+import morgan            from 'morgan';
 
-const __dirname  = path.dirname(fileURLToPath(import.meta.url));
-const app        = express();
-const GO_API_URL = process.env.GO_API_URL || 'http://localhost:8080';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app       = express();
+const API_BASE = process.env.ORCHESTRATOR_URL || 'http://orchestrator:8080';
 
-console.log(`[startup] GO_API_URL = ${GO_API_URL}`);
-
-// ──────────────────────────────────────────────────────────────
-// 1) Logging
-// ──────────────────────────────────────────────────────────────
+/*───────────────────────────
+  1) 3rd-party middleware
+───────────────────────────*/
 app.use(morgan('dev'));
 
-// ──────────────────────────────────────────────────────────────
-// 2) Capture raw JSON *before* we proxy, so onProxyReq can re-send it
-// ──────────────────────────────────────────────────────────────
-app.use(
-  '/api',
-  express.json({
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    }
-  })
-);
-
-// ──────────────────────────────────────────────────────────────
-// 3) Debug incoming /api requests
-// ──────────────────────────────────────────────────────────────
-app.use('/api', (req, _res, next) => {
-  const rewritten = req.originalUrl.replace(/^\/api/, '');
-  console.log(`[DEBUG] → ${req.method} ${req.originalUrl} → ${GO_API_URL}${rewritten}`);
-  next();
-});
-
-// ──────────────────────────────────────────────────────────────
-// 4) Proxy all /api/**/* to Go backend
-//    (mounted BEFORE express.static so the proxy always runs)
-// ──────────────────────────────────────────────────────────────
-app.use(
-  /^\/api(\/|$)/,
-  createProxyMiddleware({
-    target            : GO_API_URL,
-    changeOrigin      : true,
-    pathRewrite       : { '^/api': '' },
-    proxyTimeout      : 65_000,
-    timeout           : 70_000,
-    xfwd              : true,
-    selfHandleResponse: true,
-    logLevel          : 'debug',
-
-    onProxyReq(proxyReq, req) {
-      console.log(`→ [proxy ▶] ${req.method} ${req.originalUrl} → ${GO_API_URL}${req.originalUrl.replace(/^\/api/, '')}`);
-      if (req.rawBody && req.rawBody.length) {
-        proxyReq.setHeader('Content-Type', 'application/json');
-        proxyReq.setHeader('Content-Length', req.rawBody.length);
-        proxyReq.write(req.rawBody);
-      }
-    },
-
-    async onProxyRes(proxyRes, req, res) {
-      console.log(`← [proxy ◀] ${req.method} ${req.originalUrl} ← ${proxyRes.statusCode}`);
-      let buf = Buffer.alloc(0);
-      for await (const chunk of proxyRes) buf = Buffer.concat([buf, chunk]);
-
-      // Forward headers
-      Object.entries(proxyRes.headers).forEach(([k, v]) => res.setHeader(k, v));
-
-      // Special handling for login—to store session
-      if (req.method === 'POST' && req.originalUrl.endsWith('/user/login')) {
-        try {
-          const json = JSON.parse(buf.toString());
-          if (json.status === 'ok') {
-            req.session.user = { username: json.userId, role: json.role };
-          }
-        } catch (e) {
-          console.warn('[proxy] login JSON parse error', e);
-        }
-      }
-      return res.status(proxyRes.statusCode).end(buf);
-    },
-
-    onError(err, req, res) {
-      console.error(`‼ [proxy !!] ${req.method} ${req.originalUrl}:`, err.message);
-      if (!res.headersSent) res.status(504).json({ message: 'API gateway timeout' });
-    },
-  })
-);
-
-// ──────────────────────────────────────────────────────────────
-// 5) Static files (placed AFTER the proxy)
-// ──────────────────────────────────────────────────────────────
+/*───────────────────────────
+  2) Static assets
+───────────────────────────*/
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ──────────────────────────────────────────────────────────────
-// 6) Session & locals (for UI routes)
-// ──────────────────────────────────────────────────────────────
+/*───────────────────────────
+  3) Body-parsers  (moved ↑)
+     – form POSTs need req.body
+───────────────────────────*/
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
+
+/*───────────────────────────
+  4) Sessions  (+ locals helper)
+───────────────────────────*/
 app.use(session({
   secret           : 'change-this-secret',
   resave           : false,
@@ -116,110 +44,146 @@ app.use((req, res, next) => {
   next();
 });
 
-// ──────────────────────────────────────────────────────────────
-// 7) Log PATCH /api/purchase payloads
-// ──────────────────────────────────────────────────────────────
-app.use('/api/purchase', (req, _res, next) => {
-  const bodyLog = req.rawBody ? req.rawBody.toString() : JSON.stringify(req.body);
-  console.log('⬅️  Received PATCH /api/purchase body:', bodyLog);
-  next();
-});
-
-// ──────────────────────────────────────────────────────────────
-// 8) Fallback body parsing for non-proxied routes
-// ──────────────────────────────────────────────────────────────
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
-
-// ──────────────────────────────────────────────────────────────
-// 9) EJS views
-// ──────────────────────────────────────────────────────────────
+/*───────────────────────────
+  5) EJS templating
+───────────────────────────*/
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// ──────────────────────────────────────────────────────────────
-// 10) Auth helper
-// ──────────────────────────────────────────────────────────────
+/*───────────────────────────
+  6) Auth helper
+───────────────────────────*/
 function auth(role) {
   return (req, res, next) => {
     if (!req.session.user) return res.redirect('/login');
-    if (role && req.session.user.role !== role)
-      return res.redirect(`/${req.session.user.role}`);
+    if (role) {
+      // accept institution + representative aliases
+      if (role === 'institution') {
+        if (!['institution', 'representative', 'institution_representative']
+              .includes(req.session.user.role)) {
+          return res.redirect(`/${req.session.user.role}`);
+        }
+      } else if (req.session.user.role !== role) {
+        return res.redirect(`/${req.session.user.role}`);
+      }
+    }
     next();
   };
 }
 
-// Dummy local users (UI fallback)
+/*───────────────────────────
+  7) Dummy users (dev only)
+───────────────────────────*/
 const users = { alice: 'student', bob: 'instructor', iris: 'institution' };
 
-// ──────────────────────────────────────────────────────────────
-// 11) UI Routes (unchanged)
-// ──────────────────────────────────────────────────────────────
+/*───────────────────────────
+  8) UI routes
+───────────────────────────*/
+
+// Home
 app.get('/', (req, res) => {
   if (!req.session.user) return res.redirect('/login');
   res.redirect(`/${req.session.user.role}`);
 });
 
-app.get('/signup', (req, res) =>
-  res.render('institution/userManagement', { user: null, title: 'Sign Up' })
+// Signup / Login ────────────────────────────────────────────
+app.get('/signup', (_, res) =>
+  res.render('signup', { title: 'Sign Up', user: null })
 );
-app.get('/login', (req, res) =>
+
+app.get('/login', (_, res) =>
   res.render('login', { title: 'Log in', error: null, user: null })
 );
 
-// Local-only fallback login (for dev)
-app.post('/login', (req, res) => {
+// CLASSIC form POST – creates session
+app.post('/login', async (req, res) => {
   const { username, password } = req.body;
-  const role = users[username];
-  if (!role || password !== '1234') {
-    return res.render('login', { title: 'Log in', error: 'Invalid credentials', user: null });
+  try {
+    // Call orchestrator → user-management service
+    const response = await fetch('${API_BASE}/user/login', {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ username, password })
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.role) {
+      return res.render('login', {
+        title : 'Log in',
+        error : data.message || 'Invalid credentials',
+        user  : null
+      });
+    }
+
+    // ⚠️  SAVE USER TO SESSION
+    req.session.user = { username, role: data.role };
+
+    // Redirect by role
+    if (['institution_representative', 'representative']
+        .includes(data.role))      return res.redirect('/institution');
+    else if (data.role === 'instructor') return res.redirect('/instructor');
+    else if (data.role === 'student')    return res.redirect('/student');
+    else                                 return res.redirect('/');
+  } catch (err) {
+    return res.render('login', {
+      title : 'Log in',
+      error : 'Login failed',
+      user  : null
+    });
+  }
+});
+app.post('/api/session', (req, res) => {
+  const { username, role } = req.body;
+  if (!username || !role) {
+    return res.status(400).json({ error: 'username and role required' });
   }
   req.session.user = { username, role };
-  res.redirect(`/${role}`);
+  res.sendStatus(200);
 });
-
 app.get('/logout', (req, res) =>
   req.session.destroy(() => res.redirect('/login'))
 );
 
-// Student routes
-app.get('/student',            auth('student'), (req, res) => res.render('student/dashboard',     { user: req.session.user, title: 'Dashboard' }));
-app.get('/student/statistics', auth('student'), (req, res) => res.render('student/statistics',    { user: req.session.user, title: 'Statistics' }));
-app.get('/student/my-courses', auth('student'), (req, res) => res.render('student/myCourses',     { user: req.session.user, title: 'My Courses' }));
-app.get('/student/request',    auth('student'), (req, res) => res.render('student/reviewRequest', { user: req.session.user, title: 'Review Request' }));
-app.get('/student/status',     auth('student'), (req, res) => res.render('student/reviewStatus',  { user: req.session.user, title: 'Review Status' }));
-app.get('/student/personal',   auth('student'), (req, res) => res.render('student/personal',      { user: req.session.user, title: 'Personal Grades' }));
+// Student UI ────────────────────────────────────────────────
+app.get('/student',            auth('student'), (req,res)=>res.render('student/dashboard',    { user:req.session.user, title:'Dashboard' }));
+app.get('/student/statistics', auth('student'), (req,res)=>res.render('student/statistics',   { user:req.session.user, title:'Statistics' }));
+app.get('/student/my-courses', auth('student'), (req,res)=>res.render('student/myCourses',    { user:req.session.user, title:'My Courses' }));
+app.get('/student/request',    auth('student'), (req,res)=>res.render('student/reviewRequest',{ user:req.session.user, title:'Review Request' }));
+app.get('/student/status',     auth('student'), (req,res)=>res.render('student/reviewStatus', { user:req.session.user, title:'Review Status' }));
+app.get('/student/personal',   auth('student'), (req,res)=>res.render('student/personal',     { user:req.session.user, title:'Personal Grades' }));
 
-// Instructor routes
-app.get('/instructor',              auth('instructor'), (req, res) => res.render('instructor/dashboard',   { user: req.session.user, title: 'Dashboard' }));
-app.get('/instructor/post-initial', auth('instructor'), (req, res) => res.render('instructor/postInitial', { user: req.session.user, title: 'Post Initial' }));
-app.get('/instructor/post-final',   auth('instructor'), (req, res) => res.render('instructor/postFinal',   { user: req.session.user, title: 'Post Final' }));
-app.get('/instructor/review-list',  auth('instructor'), (req, res) => res.render('instructor/reviewList',  { user: req.session.user, title: 'Review Requests' }));
-app.get('/instructor/reply',        auth('instructor'), (req, res) => {
+// Instructor UI ─────────────────────────────────────────────
+app.get('/instructor',              auth('instructor'), (req,res)=>res.render('instructor/dashboard', { user:req.session.user, title:'Dashboard' }));
+app.get('/instructor/post-initial', auth('instructor'), (req,res)=>res.render('instructor/postInitial',{ user:req.session.user, title:'Post Initial' }));
+app.get('/instructor/post-final',   auth('instructor'), (req,res)=>res.render('instructor/postFinal',  { user:req.session.user, title:'Post Final' }));
+app.get('/instructor/review-list',  auth('instructor'), (req,res)=>res.render('instructor/reviewList', { user:req.session.user, title:'Review Requests' }));
+app.get('/instructor/reply',        auth('instructor'), (req,res)=>{
   const request_id = req.query.req || '';
-  res.render('instructor/replyForm', {
-    user         : req.session.user,
-    title        : 'Reply to Review Request',
+  res.render('instructor/replyForm',{
+    user        : req.session.user,
+    title       : 'Reply to Review Request',
     request_id,
-    course_name  : 'software II',
-    exam_period  : 'spring 2025',
-    student_name : 'john doe',
+    course_name : 'software II',
+    exam_period : 'spring 2025',
+    student_name: 'john doe',
   });
 });
-app.get('/instructor/statistics',   auth('instructor'), (req, res) => res.render('instructor/statistics',  { user: req.session.user, title: 'Statistics' }));
+app.get('/instructor/statistics',   auth('instructor'), (req,res)=>res.render('instructor/statistics', { user:req.session.user, title:'Statistics' }));
 
-// Institution routes
-app.get('/institution',                 auth('institution'), (req, res) => res.render('institution/dashboard',       { user: req.session.user, title: 'Dashboard' }));
-app.get('/institution/register',        auth('institution'), (req, res) => res.render('institution/register',        { user: req.session.user, title: 'Register' }));
-app.get('/institution/purchase',        auth('institution'), (req, res) => res.render('institution/purchase',        { user: req.session.user, title: 'Purchase' }));
-app.get('/institution/user-management', auth('institution'), (req, res) => res.render('institution/userManagement', { user: req.session.user, title: 'Users' }));
-app.get('/institution/statistics',      auth('institution'), (req, res) => res.render('institution/statistics',     { user: req.session.user, title: 'Statistics' }));
+// Institution UI ────────────────────────────────────────────
+app.get('/institution',                 auth('institution'), (req,res)=>res.render('institution/dashboard',      { user:req.session.user, title:'Dashboard' }));
+app.get('/institution/register',        auth('institution'), (req,res)=>res.render('institution/register',       { user:req.session.user, title:'Register' }));
+app.get('/institution/purchase',        auth('institution'), (req,res)=>res.render('institution/purchase',       { user:req.session.user, title:'Purchase' }));
+app.get('/institution/user-management', auth('institution'), (req,res)=>res.render('institution/userManagement', { user:req.session.user, title:'Users' }));
+app.get('/institution/statistics',      auth('institution'), (req,res)=>res.render('institution/statistics',     { user:req.session.user, title:'Statistics' }));
 
-// ──────────────────────────────────────────────────────────────
-// 12) Start server
-// ──────────────────────────────────────────────────────────────
+/*───────────────────────────
+  9) Server start-up
+───────────────────────────*/
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✔ Front-end listening on http://localhost:${PORT}`));
+app.listen(PORT, () =>
+  console.log(`✔ Front-end listening at http://localhost:${PORT}`)
+);
 
 ===== front-end/public/api/credits.js =====
 // credits.js
@@ -304,27 +268,32 @@ export const getPersonalGrades = ({ user_id, course_id, exam_period }) =>
   });
 
 ===== front-end/public/api/_request.js =====
-const API_BASE = '/api';
+// file: front-end/public/api/_request.js
+
+// Base URL of your Go API
+const API_BASE = 'http://orchestrator:8080';
 
 export async function request(path, { method = 'GET', body, headers } = {}) {
-  // Debug log every API call
   console.log('→ [API]', method, path, 'body:', body);
 
   const opts = { method, headers: { ...headers } };
 
   if (body instanceof FormData) {
-    // let the browser set the multipart boundary
+    // Let the browser set the multipart boundary for form data
     opts.body = body;
   } else if (body !== undefined) {
     opts.body    = JSON.stringify(body);
     opts.headers = { 'Content-Type': 'application/json', ...opts.headers };
   }
 
-  const res  = await fetch(`${API_BASE}${path}`, opts);
+  const res = await fetch(`${API_BASE}${path}`, opts);
   const json = await res.json().catch(() => ({}));
 
-  if (!res.ok) throw new Error(json.message || res.statusText);
-  return json; // backend wraps responses in { data: … }
+  if (!res.ok) {
+    throw new Error(json.message || res.statusText);
+  }
+
+  return json; // Expecting { data: … } shape from your API
 }
 
 ===== front-end/public/api/stats.js =====
@@ -354,45 +323,70 @@ export const getReviewStatus = ({ user_id, course_id, exam_period }) =>
   });
 
 ===== front-end/public/api/users.js =====
-// users.js
+// file: front-end/public/api/users.js
 import { request } from './_request.js';
 
-export const registerUser = payload =>
-  request('/user/register', { method: 'POST', body: payload });
-
-export const loginUser = ({ username, password }) =>
-  request('/user/login',   { method: 'POST', body: { username, password } });
-
-export const deleteUser = ({ user_id }) =>
-  request('/user/delete',  { method: 'DELETE', body: { user_id } });
-
-export const googleLoginUser = token =>
-  request('/user/google-login', { method: 'POST', body: { token } });
+/**
+ * Log in an existing user. On success, returns { role, status, token, userId }.
+ */
+export const loginUser = ({ username, password, email }) =>
+  request('/user/login', {
+    method : 'POST',
+    body   : email
+      ? { email, password }
+      : { username, password }
+  }).then(response => {
+    if (!response.role) {
+      throw new Error(response.message || 'Login failed');
+    }
+    // store JWT if returned
+    if (response.token) localStorage.setItem('jwt', response.token);
+    return response;
+  });
 
 ===== front-end/public/js/auth/login.js =====
-// front-end/public/js/auth/login.js
 import { flash } from '../../script.js';
 import { loginUser, googleLoginUser } from '../../api/users.js';
 
-const form = document.querySelector('#login-form');
+const form     = document.querySelector('#login-form');
 const errorMsg = document.querySelector('#error-msg');
 
 form.addEventListener('submit', async e => {
   e.preventDefault();
   errorMsg.style.display = 'none';
 
-  const input = form.username.value.trim();
+  const input    = form.username.value.trim();
   const password = form.password.value;
-  // Simple email regex
-  const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input);
-  const payload = isEmail ? { email: input, password } : { username: input, password };
+  const isEmail  = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input);
+  const payload  = isEmail
+    ? { email: input, password }
+    : { username: input, password };
 
   try {
-    await loginUser(payload);
-    // JWT stored by loginUser → now safe to redirect
-    window.location.href = '/';
+    // Attempt login via orchestrator
+    const { role, userId } = await loginUser(payload);
+
+    // Tell Express to set the session cookie
+    await fetch('/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: form.username.value.trim(),
+        role
+      })
+    });
+
+    // Redirect based on role
+    if (role === 'institution_representative' || role === 'representative') {
+      window.location.href = '/institution';
+    } else if (role === 'instructor') {
+      window.location.href = '/instructor';
+    } else if (role === 'student') {
+      window.location.href = '/student';
+    } else {
+      window.location.href = '/';
+    }
   } catch (err) {
-    // show inline error
     errorMsg.textContent = err.message;
     errorMsg.style.display = 'block';
   }
@@ -403,10 +397,23 @@ const googleBtn = document.querySelector('#google-login-btn');
 if (googleBtn) {
   googleBtn.addEventListener('click', async () => {
     try {
-      // this is just an example placeholder
       const googleToken = await getGoogleOAuthTokenSomehow();
-      await googleLoginUser(googleToken);
-      window.location.href = '/';
+      const { role }   = await googleLoginUser(googleToken);
+
+      // Set session for Google login
+      await fetch('/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: '', // use email or name if you want
+          role
+        })
+      });
+
+      if (role === 'institution_representative')      window.location.href = '/institution';
+      else if (role === 'instructor')                 window.location.href = '/instructor';
+      else if (role === 'student')                    window.location.href = '/student';
+      else                                            window.location.href = '/';
     } catch (err) {
       flash(`Google login failed: ${err.message}`);
     }
@@ -453,7 +460,7 @@ form.addEventListener('submit', async e => {
 // public/js/instructor/post-final.js
 import { flash } from '../script.js';
 
-const form = document.querySelector('form[action="/api/grades/upload-final"]');
+const form = document.querySelector('form[action="/grades/upload-final"]');
 form.addEventListener('submit', async e => {
   e.preventDefault();
   const fileInput = form.querySelector('input[type=file]');
@@ -480,8 +487,8 @@ form.addEventListener('submit', async e => {
 // public/js/instructor/post-initial.js
 import { flash } from '../script.js';
 
-const form = document.querySelector('form[action="/api/grades/upload"]') ||
-             document.querySelector('form[action="/api/grades/upload"]');
+const form = document.querySelector('form[action="/grades/upload"]') ||
+             document.querySelector('form[action="/grades/upload"]');
 form.addEventListener('submit', async e => {
   e.preventDefault();
   const fileInput = form.querySelector('input[type=file]');
@@ -601,7 +608,7 @@ import { flash } from '../../script.js';
 import { postInstructorReply } from '../../api/instructor.js';
 
 // Now matching action="/api/instructor/reply"
-const form = document.querySelector('form[action="/api/instructor/reply"]');
+const form = document.querySelector('form[action="/instructor/reply"]');
 
 form.addEventListener('submit', async e => {
   e.preventDefault();
@@ -714,7 +721,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 import { flash } from '../../script.js';
 import { postReviewRequest } from '../../api/student.js';
 
-const form = document.querySelector('form[action="/api/appeals"]');
+const form = document.querySelector('form[action="/appeals"]');
 
 form.addEventListener('submit', async e => {
   e.preventDefault();
@@ -1323,33 +1330,37 @@ input, select, textarea {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <%- include('partials/head',{title: 'Log in'}) %>
+  <%- include('partials/head', { title: 'Log in' }) %>
 </head>
 <body>
-  <%- include('partials/navbar' ) %>
+  <%- include('partials/navbar') %>
+
   <main class="login-container">
-    <fieldset><legend>Welcome to clearSKY</legend>
-      <!-- changed: no action/method, JS will handle -->
-      <form id="login-form" novalidate>
+    <fieldset>
+      <legend>Welcome to clearSKY</legend>
+
+      <!-- classic form POST -->
+      <form id="login-form" action="/login" method="post">
+
         <div class="form-group">
           <label for="username">User name</label>
           <input id="username" name="username" required />
         </div>
+
         <div class="form-group">
           <label for="password">Password</label>
           <input id="password" name="password" type="password" required />
         </div>
+
         <button class="button" type="submit">Login</button>
-        <button class="button button--secondary" type="button" id="google-login-btn">
-          Login with Google
-        </button>
       </form>
 
-      <p id="error-msg" style="color: #c00; margin-top: 1rem; display: none;"></p>
+      <!-- space for server-side errors -->
+      <% if (error) { %>
+        <p style="color:#c00;margin-top:1rem;"><%= error %></p>
+      <% } %>
     </fieldset>
   </main>
-
-  <script type="module" src="/js/auth/login.js"></script>
 </body>
 </html>
 
@@ -5183,6 +5194,10 @@ func HandleUserLogin(c *gin.Context, ch *amqp.Channel) {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	// Ensure role is present in response
+	if role, ok := resp["role"]; !ok || role == "" {
+		resp["role"] = resp["Role"] // fallback if capitalized
+	}
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -5426,13 +5441,12 @@ func StartOrchestratorConsumer(ch *amqp.Channel) error {
 }
 
 ===== orchestrator/internal/routes/routes.go =====
+// file: orchestrator/internal/routes/router.go
 package routes
 
 import (
 	"orchestrator/internal/handlers"
 	mw "orchestrator/internal/middleware"
-
-	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -5442,16 +5456,13 @@ import (
 func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	r := gin.Default()
 
+	// DEVELOPMENT CORS: allow all origins and methods, handle preflight automatically
 	r.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:3000",
-			"http://localhost:5173",
-			"https://frontend.example.com",
-		},
-		AllowMethods:     []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		AllowCredentials: true, // if you rely on cookies or auth headers
-		MaxAge:           12 * time.Hour,
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
 	}))
 
 	// 16 MiB in-memory before spilling to /tmp
@@ -5459,18 +5470,14 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 
 	// Shared stats endpoints (all roles)
 	stats := r.Group("/stats")
-	// stats.Use(mw.JWTAuthMiddleware())
-	// {
-	stats.GET("/available", func(c *gin.Context) {
-		handlers.HandleSubmissionLogs(c, ch)
-	})
-	stats.GET("/courses", func(c *gin.Context) {
-		handlers.HandleSubmissionLogs(c, ch)
-	})
-	// stats.GET("/distributions", func(c *gin.Context) {
-	// 	handlers.HandleGetDistributions(c, ch)
-	// })
-	// }
+	{
+		stats.GET("/available", func(c *gin.Context) {
+			handlers.HandleSubmissionLogs(c, ch)
+		})
+		stats.GET("/courses", func(c *gin.Context) {
+			handlers.HandleSubmissionLogs(c, ch)
+		})
+	}
 
 	// Institution‐representative only
 	inst := r.Group("/")
@@ -5490,38 +5497,35 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	// Instructor only
 	instr := r.Group("/")
 	// instr.Use(mw.JWTAuthMiddleware(), RoleCheck("instructor"))
-	// {
-	instr.POST("/upload_init", func(c *gin.Context) {
-		handlers.UploadExcelInit(c, ch)
-	})
-	instr.PATCH("/postFinalGrades", func(c *gin.Context) {
-		handlers.UploadExcelFinal(c, ch)
-	})
-	instr.PATCH("/instructor/review-list", func(c *gin.Context) {
-		handlers.HandleGetRequestList(c, ch)
-	})
-	instr.PATCH("/instructor/reply", func(c *gin.Context) {
-		handlers.HandlePostResponse(c, ch)
-	})
-	// }
+	{
+		instr.POST("/upload_init", func(c *gin.Context) {
+			handlers.UploadExcelInit(c, ch)
+		})
+		instr.PATCH("/postFinalGrades", func(c *gin.Context) {
+			handlers.UploadExcelFinal(c, ch)
+		})
+		instr.PATCH("/instructor/review-list", func(c *gin.Context) {
+			handlers.HandleGetRequestList(c, ch)
+		})
+		instr.PATCH("/instructor/reply", func(c *gin.Context) {
+			handlers.HandlePostResponse(c, ch)
+		})
+	}
 
 	// Student only
 	std := r.Group("/")
 	// std.Use(mw.JWTAuthMiddleware(), RoleCheck("student"))
-	// {
-	// std.POST("/personal/courses", func(c *gin.Context) {
-	// 	handlers.HandleGetStudentCourses(c, ch)
-	// })
-	std.GET("/personal/grades", func(c *gin.Context) {
-		handlers.HandleGetPersonalGrades(c, ch)
-	})
-	std.PATCH("/student/reviewRequest", func(c *gin.Context) {
-		handlers.HandlePostNewRequest(c, ch)
-	})
-	std.PATCH("/student/status", func(c *gin.Context) {
-		handlers.HandleGetRequestStatus(c, ch)
-	})
-	// }
+	{
+		std.GET("/personal/grades", func(c *gin.Context) {
+			handlers.HandleGetPersonalGrades(c, ch)
+		})
+		std.PATCH("/student/reviewRequest", func(c *gin.Context) {
+			handlers.HandlePostNewRequest(c, ch)
+		})
+		std.PATCH("/student/status", func(c *gin.Context) {
+			handlers.HandleGetRequestStatus(c, ch)
+		})
+	}
 
 	// Public User‐management (no JWT)
 	{
@@ -6700,7 +6704,9 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"token": token,
+			"token":  token,
+			"role":   user.Role, // add role to response
+			"userId": user.ID,   // add userId for completeness
 		})
 	}
 }
@@ -6897,6 +6903,7 @@ type AuthRequest struct {
 	Email    string `json:"email,omitempty"`
 	Username string `json:"username,omitempty"`
 	Password string `json:"password"`
+	Role     string `json:"role,omitempty"`
 }
 
 type AuthResponse struct {
@@ -6932,8 +6939,12 @@ func ConsumeAuthQueue(db *gorm.DB) {
 				} else if req.Username != "" && db.Where("username = ?", req.Username).First(&existing).Error == nil {
 					resp = AuthResponse{Status: "error", Message: "Username already registered"}
 				} else {
+					role := req.Role
+					if role == "" {
+						role = "student"
+					}
 					hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-					user := model.User{ID: uuid.NewString(), Email: req.Email, Username: req.Username, PasswordHash: string(hash), Role: "student"}
+					user := model.User{ID: uuid.NewString(), Email: req.Email, Username: req.Username, PasswordHash: string(hash), Role: role}
 					if err := db.Create(&user).Error; err != nil {
 						resp = AuthResponse{Status: "error", Message: "Failed to create user"}
 					} else {

@@ -53,7 +53,9 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"token": token,
+			"token":  token,
+			"role":   user.Role, // add role to response
+			"userId": user.ID,   // add userId for completeness
 		})
 	}
 }
