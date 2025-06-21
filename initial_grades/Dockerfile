@@ -15,4 +15,4 @@ COPY . .
 ENV NODE_ENV=production
 
 # 5. Default command: run consumer
-CMD ["node", "grades_consumer.js"]
+CMD ["node", "app.js"]
