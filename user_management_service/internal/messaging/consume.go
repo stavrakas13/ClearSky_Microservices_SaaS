@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type AuthRequest struct {
@@ -42,79 +44,49 @@ func ConsumeAuthQueue(db *gorm.DB) {
 				d.Nack(false, false)
 				continue
 			}
-
-			switch req.Type {
-			case "register":
-				handleRegister(db, req)
-			case "login":
-				handleLogin(db, req)
-			default:
-				log.Println("Unknown auth type:", req.Type)
+			var resp AuthResponse
+			// register
+			if req.Type == "register" {
+				var existing model.User
+				if err := db.Where("email = ?", req.Email).First(&existing).Error; err == nil {
+					resp = AuthResponse{Status: "error", Message: "Email already registered"}
+				} else {
+					hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+					user := model.User{ID: uuid.NewString(), Email: req.Email, PasswordHash: string(hash), Role: "student"}
+					if err := db.Create(&user).Error; err != nil {
+						resp = AuthResponse{Status: "error", Message: "Failed to create user"}
+					} else {
+						resp = AuthResponse{Status: "ok", UserID: user.ID, Role: user.Role}
+					}
+				}
+				// login
+			} else if req.Type == "login" {
+				var user model.User
+				if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
+					resp = AuthResponse{Status: "error", Message: "Invalid credentials"}
+				} else if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+					resp = AuthResponse{Status: "error", Message: "Invalid credentials"}
+				} else {
+					token, err := jwt.GenerateToken(user.ID, user.Email, user.Role, user.StudentID)
+					if err != nil {
+						resp = AuthResponse{Status: "error", Message: "Token generation failed"}
+					} else {
+						resp = AuthResponse{Status: "ok", Token: token, Role: user.Role, UserID: user.ID}
+					}
+				}
+			} else {
+				resp = AuthResponse{Status: "error", Message: "Unknown request type"}
+			}
+			// send RPC reply
+			body, _ := json.Marshal(resp)
+			if d.ReplyTo != "" {
+				Channel.Publish("", d.ReplyTo, false, false, amqp.Publishing{
+					ContentType:   "application/json",
+					CorrelationId: d.CorrelationId,
+					Body:          body,
+				})
 			}
 			d.Ack(false)
 		}
 	}()
-}
-
-func handleRegister(db *gorm.DB, req AuthRequest) {
-	var existing model.User
-	if err := db.Where("email = ?", req.Email).First(&existing).Error; err == nil {
-		PublishEvent("auth.register.failure", AuthResponse{
-			Status:  "error",
-			Message: "Email already registered",
-		})
-		return
-	}
-
-	hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	user := model.User{
-		ID:           uuid.NewString(),
-		Email:        req.Email,
-		PasswordHash: string(hash),
-		Role:         "student",
-	}
-	if err := db.Create(&user).Error; err != nil {
-		PublishEvent("auth.register.failure", AuthResponse{
-			Status:  "error",
-			Message: "Failed to create user",
-		})
-		return
-	}
-
-	PublishEvent("auth.register.success", AuthResponse{
-		Status: "ok",
-		UserID: user.ID,
-	})
-}
-
-func handleLogin(db *gorm.DB, req AuthRequest) {
-	var user model.User
-	if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
-		PublishEvent("auth.login.failure", AuthResponse{
-			Status:  "error",
-			Message: "Invalid credentials",
-		})
-		return
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		PublishEvent("auth.login.failure", AuthResponse{
-			Status:  "error",
-			Message: "Invalid credentials",
-		})
-		return
-	}
-	token, err := jwt.GenerateToken(user.ID, user.Email, user.Role, user.StudentID)
-	if err != nil {
-		PublishEvent("auth.login.failure", AuthResponse{
-			Status:  "error",
-			Message: "Token generation failed",
-		})
-		return
-	}
-	PublishEvent("auth.login.success", AuthResponse{
-		Status: "ok",
-		Token:  token,
-		Role:   user.Role,
-		UserID: user.ID,
-	})
 }
