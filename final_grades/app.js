@@ -4,7 +4,7 @@ const mongoose       = require('mongoose');
 const { MongoClient } = require('mongodb');
 const XLSX           = require('xlsx');
 
-const {
+/* const {
   MONGO_URI,
   RABBITMQ_URI,
   RABBITMQ_EXCHANGE,
@@ -15,6 +15,27 @@ const {
 if (!MONGO_URI || !RABBITMQ_URI || !RABBITMQ_EXCHANGE ||
     !RABBITMQ_ROUTING_KEY || !RABBITMQ_CREDIT_INCR_KEY) {
   console.error('❌  Missing required environment variables');
+  process.exit(1);
+} */
+
+const {
+  MONGO_URI,
+  RABBITMQ_URI,
+  RABBITMQ_EXCHANGE,
+  RABBITMQ_ROUTING_KEY,
+  RABBITMQ_CREDIT_INCR_KEY
+} = process.env;
+
+const missingVars = [];
+
+if (!MONGO_URI) missingVars.push("MONGO_URI");
+if (!RABBITMQ_URI) missingVars.push("RABBITMQ_URI");
+if (!RABBITMQ_EXCHANGE) missingVars.push("RABBITMQ_EXCHANGE");
+if (!RABBITMQ_ROUTING_KEY) missingVars.push("RABBITMQ_ROUTING_KEY");
+if (!RABBITMQ_CREDIT_INCR_KEY) missingVars.push("RABBITMQ_CREDIT_INCR_KEY");
+
+if (missingVars.length > 0) {
+  console.error(`❌ Missing required environment variables: ${missingVars.join(", ")}`);
   process.exit(1);
 }
 

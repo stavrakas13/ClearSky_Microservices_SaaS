@@ -3,7 +3,7 @@ const amqp = require('amqplib');
 const mysql = require('mysql2/promise');
 const XLSX = require('xlsx');
 
-const {
+/* const {
   MYSQL_URI,
   RABBITMQ_URI,
   RABBITMQ_EXCHANGE,
@@ -15,6 +15,29 @@ if (!MYSQL_URI || !RABBITMQ_URI || !RABBITMQ_EXCHANGE || !RABBITMQ_ROUTING_KEY |
   console.error(`[${new Date().toISOString()}] ❌ Missing required environment variables`);
   process.exit(1);
 }
+ */
+
+const {
+  MYSQL_URI,
+  RABBITMQ_URI,
+  RABBITMQ_EXCHANGE,
+  RABBITMQ_ROUTING_KEY,
+  RABBITMQ_GET_GRADES_KEY
+} = process.env;
+
+const missingVars = [];
+
+if (!MYSQL_URI) missingVars.push("MYSQL_URI");
+if (!RABBITMQ_URI) missingVars.push("RABBITMQ_URI");
+if (!RABBITMQ_EXCHANGE) missingVars.push("RABBITMQ_EXCHANGE");
+if (!RABBITMQ_ROUTING_KEY) missingVars.push("RABBITMQ_ROUTING_KEY");
+if (!RABBITMQ_GET_GRADES_KEY) missingVars.push("RABBITMQ_GET_GRADES_KEY");
+
+if (missingVars.length > 0) {
+  console.error(`[${new Date().toISOString()}] ❌ Missing required environment variables: ${missingVars.join(", ")}`);
+  process.exit(1);
+}
+
 
 const log = (...args) => console.log(`[${new Date().toISOString()}]`, ...args);
 

@@ -174,6 +174,180 @@ services:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     networks:
       - clearSky-net
+    
+  # INITIAL GRADES SERVICE
+
+  initial_grades_db:
+    image: mongo:6.0
+    container_name: initial_grades_db
+    restart: always
+    environment:
+      - MONGO_URI=mongodb://initial_grades_db:27017/ingradesdb
+      - MONGO_USER=root
+      - MONGO_PASS=2002
+      - MONGO_HOST=localhost
+      - MONGO_PORT=27017
+      - MONGO_DB=ingradesdb
+      - MONGO_AUTH=admin
+    ports:
+      - "27017:27017"
+    #volumes:
+    networks:
+        - clearSky-net
+  
+  initial_grades_service:
+    build:
+      context: ./initial_grades
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - rabbitmq
+      - initial_grades_db
+    environment:
+      - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
+      - DATABASE_URL=mongodb://initial_grades_db:27017/ingradesdb
+      - MONGO_URI=mongodb://initial_grades_db:27017/ingradesdb
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+      - RABBITMQ_EXCHANGE=clearSky.events
+      - RABBITMQ_ROUTING_KEY=postgrades.init
+      - RABBITMQ_CREDIT_INCR_KEY=incr.credits
+      - MONGO_USER=root
+      - MONGO_PASS=2002
+      - MONGO_HOST=localhost
+      - MONGO_PORT=27017
+      - MONGO_DB=ingradesdb
+      - MONGO_AUTH=admin
+    networks:
+      - clearSky-net
+    
+  
+  # FINAL GRADES SERVICE
+  final_grades_db:
+    image: mongo:6.0
+    container_name: final_grades_db
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://final_grades_db:27017/finalgradesdb     
+      - MONGO_USER=root
+      - MONGO_PASS=2002
+      - MONGO_HOST=localhost
+      - MONGO_PORT=27017
+      - MONGO_DB=finalgradesdb
+      - MONGO_AUTH=admin
+    ports:
+      - "27018:27017"
+    #volumes:
+    networks:
+        - clearSky-net
+  
+  final_grades_service:
+    build:
+      context: ./final_grades
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - rabbitmq
+      - final_grades_db
+    environment:
+      - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
+      - DATABASE_URL=mongodb://final_grades_db:27017/finalgradesdb
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://final_grades_db:27017/final_grades
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+      - RABBITMQ_EXCHANGE=clearSky.events
+      - RABBITMQ_ROUTING_KEY=postgrades.final
+      - RABBITMQ_CREDIT_INCR_KEY=credits.incr
+    networks:
+      - clearSky-net
+
+  # STATS SERVICE
+
+  stats_db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      - MYSQL_URI=mysql://user:password@mysql:3306/statsdb
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=statsdb
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=password
+    ports:
+      - "3306:3306"
+    #volumes:
+    networks:
+      - clearSky-net
+
+  stats_service:
+    build:
+      context: ./stats_service
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - rabbitmq
+      - stats_db
+    environment:
+      - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
+      - DATABASE_URL=mysql://user:password@stats_db:3306/statsdb
+      - MYSQL_URI=mysql://user:password@stats_db:3306/statsdb
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+      - RABBITMQ_EXCHANGE=clearSky.events
+      - RABBITMQ_ROUTING_KEY=postgrades.statistics
+      - RABBITMQ_GET_GRADES_KEY=stats.get
+      - RABBITMQ_SEND_AVAIL_KEY=stats.avail
+     # - MYSQL_ROOT_PASSWORD=root
+     # - MYSQL_DATABASE=statsdb
+     # - MYSQL_USER=user
+     # - MYSQL_PASSWORD=password
+    networks:
+      - clearSky-net
+    
+  # VIEW GRADES SERVICE
+
+  view_grades_db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      - MYSQL_URI=mysql://user:password@mysql:3306/viewgradesdb
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=viewgradesdb
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=password
+    ports:
+      - "3307:3306"
+    #volumes:
+    networks:
+      - clearSky-net
+
+  view_grades_service:
+    build:
+      context: ./View_personal_grades
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - rabbitmq
+      - view_grades_db
+    environment:
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+
+      - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
+      - DATABASE_URL=mysql://user:password@view_grades_db:3306/viewgradesdb
+      - MYSQL_URI=mysql://user:password@view_grades_db:3306/viewgradesdb
+      - RABBITMQ_EXCHANGE=clearSky.events
+      - RABBITMQ_ROUTING_KEY=postgrades.view
+      - RABBITMQ_GET_GRADES_KEY=view.avail
+#      - MYSQL_ROOT_PASSWORD=root
+#      - MYSQL_DATABASE=viewgradesdb
+#      - MYSQL_USER=user
+#      - MYSQL_PASSWORD=password
+    networks:
+      - clearSky-net
+
+
+
+
+
+
 
 networks:
   clearSky-net:
