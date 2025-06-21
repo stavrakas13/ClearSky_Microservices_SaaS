@@ -19,6 +19,7 @@ type AuthRequest struct {
 	Email    string `json:"email,omitempty"`
 	Username string `json:"username,omitempty"`
 	Password string `json:"password"`
+	Role     string `json:"role,omitempty"`
 }
 
 type AuthResponse struct {
@@ -54,8 +55,12 @@ func ConsumeAuthQueue(db *gorm.DB) {
 				} else if req.Username != "" && db.Where("username = ?", req.Username).First(&existing).Error == nil {
 					resp = AuthResponse{Status: "error", Message: "Username already registered"}
 				} else {
+					role := req.Role
+					if role == "" {
+						role = "student"
+					}
 					hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-					user := model.User{ID: uuid.NewString(), Email: req.Email, Username: req.Username, PasswordHash: string(hash), Role: "student"}
+					user := model.User{ID: uuid.NewString(), Email: req.Email, Username: req.Username, PasswordHash: string(hash), Role: role}
 					if err := db.Create(&user).Error; err != nil {
 						resp = AuthResponse{Status: "error", Message: "Failed to create user"}
 					} else {

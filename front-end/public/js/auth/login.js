@@ -1,4 +1,3 @@
-// file: front-end/public/js/auth/login.js
 import { flash } from '../../script.js';
 import { loginUser, googleLoginUser } from '../../api/users.js';
 
@@ -17,18 +16,27 @@ form.addEventListener('submit', async e => {
     : { username: input, password };
 
   try {
-    // loginUser now returns the full response { role, status, token, userId }
-    const { role } = await loginUser(payload);
+    // Attempt login via orchestrator
+    const { role, userId } = await loginUser(payload);
 
-    // Redirect based on role:
-    if (role === 'institution_representative') {
+    // Tell Express to set the session cookie
+    await fetch('/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: form.username.value.trim(),
+        role
+      })
+    });
+
+    // Redirect based on role
+    if (role === 'institution_representative' || role === 'representative') {
       window.location.href = '/institution';
     } else if (role === 'instructor') {
       window.location.href = '/instructor';
     } else if (role === 'student') {
       window.location.href = '/student';
     } else {
-      // fallback
       window.location.href = '/';
     }
   } catch (err) {
@@ -44,10 +52,21 @@ if (googleBtn) {
     try {
       const googleToken = await getGoogleOAuthTokenSomehow();
       const { role }   = await googleLoginUser(googleToken);
-      if (role === 'institution_representative') window.location.href = '/institution';
-      else if (role === 'instructor')             window.location.href = '/instructor';
-      else if (role === 'student')                window.location.href = '/student';
-      else                                        window.location.href = '/';
+
+      // Set session for Google login
+      await fetch('/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: '', // use email or name if you want
+          role
+        })
+      });
+
+      if (role === 'institution_representative')      window.location.href = '/institution';
+      else if (role === 'instructor')                 window.location.href = '/instructor';
+      else if (role === 'student')                    window.location.href = '/student';
+      else                                            window.location.href = '/';
     } catch (err) {
       flash(`Google login failed: ${err.message}`);
     }

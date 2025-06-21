@@ -107,6 +107,10 @@ func HandleUserLogin(c *gin.Context, ch *amqp.Channel) {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	// Ensure role is present in response
+	if role, ok := resp["role"]; !ok || role == "" {
+		resp["role"] = resp["Role"] // fallback if capitalized
+	}
 	c.JSON(http.StatusOK, resp)
 }
 
