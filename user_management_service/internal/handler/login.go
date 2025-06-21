@@ -53,10 +53,7 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"token":  token,
-			"role":   user.Role,
-			"userId": user.ID,
-			"status": "ok",
+			"token": token,
 		})
 	}
 }
