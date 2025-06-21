@@ -1,0 +1,1698 @@
+===== front-end/app.js =====
+// file: front-end/app.js
+import express                   from 'express';
+import session                   from 'express-session';
+import bodyParser                from 'body-parser';
+import path                      from 'path';
+import { fileURLToPath }         from 'url';
+import { createProxyMiddleware } from 'http-proxy-middleware';
+import morgan                    from 'morgan';
+
+const __dirname  = path.dirname(fileURLToPath(import.meta.url));
+const app        = express();
+const GO_API_URL = process.env.GO_API_URL || 'http://localhost:8080';
+
+console.log(`[startup] GO_API_URL = ${GO_API_URL}`);
+
+// ──────────────────────────────────────────────────────────────
+// 1) Logging
+// ──────────────────────────────────────────────────────────────
+app.use(morgan('dev'));
+
+// ──────────────────────────────────────────────────────────────
+// 2) Capture raw JSON on /api before it hits the proxy
+// ──────────────────────────────────────────────────────────────
+app.use(
+  '/api',
+  express.json({
+    verify: (req, _res, buf) => { req.rawBody = buf; }
+  })
+);
+
+// ──────────────────────────────────────────────────────────────
+// 3) Debug incoming /api requests
+// ──────────────────────────────────────────────────────────────
+app.use('/api', (req, _res, next) => {
+  const rewritten = req.originalUrl.replace(/^\/api/, '');
+  console.log(`[DEBUG] → ${req.method} ${req.originalUrl} → ${GO_API_URL}${rewritten}`);
+  next();
+});
+
+// ──────────────────────────────────────────────────────────────
+// 4) Proxy every /api/** request to the Go orchestrator
+//    (must be before express.static)
+// ──────────────────────────────────────────────────────────────
+app.use(
+  '/api',
+  createProxyMiddleware({
+    target            : GO_API_URL,
+    changeOrigin      : true,
+    pathRewrite       : { '^/api': '' },
+    proxyTimeout      : 65_000,
+    timeout           : 70_000,
+    xfwd              : true,
+    selfHandleResponse: true,
+    logLevel          : 'debug',
+
+    onProxyReq(proxyReq, req) {
+      console.log(`→ [proxy ▶] ${req.method} ${req.originalUrl} → ${GO_API_URL}${req.originalUrl.replace(/^\/api/, '')}`);
+      if (req.rawBody?.length) {
+        proxyReq.setHeader('Content-Type', 'application/json');
+        proxyReq.setHeader('Content-Length', req.rawBody.length);
+        proxyReq.write(req.rawBody);
+      }
+    },
+
+    async onProxyRes(proxyRes, req, res) {
+      console.log(`← [proxy ◀] ${req.method} ${req.originalUrl} ← ${proxyRes.statusCode}`);
+      let buf = Buffer.alloc(0);
+      for await (const chunk of proxyRes) buf = Buffer.concat([buf, chunk]);
+
+      // Forward headers
+      Object.entries(proxyRes.headers).forEach(([k, v]) => res.setHeader(k, v));
+
+      // Special handling for login—to store session
+      if (req.method === 'POST' && req.originalUrl.endsWith('/user/login')) {
+        try {
+          const json = JSON.parse(buf.toString());
+          if (json.status === 'ok') {
+            req.session.user = { username: json.userId, role: json.role };
+            console.log('← [proxy ◀]   session.user =', req.session.user);
+          }
+        } catch (e) {
+          console.warn('← [proxy ◀]   login JSON parse error', e);
+        }
+      }
+
+      res.status(proxyRes.statusCode).end(buf);
+    },
+
+    onError(err, req, res) {
+      console.error(`‼ [proxy !!] ${req.method} ${req.originalUrl}:`, err.message);
+      if (!res.headersSent) res.status(504).json({ message: 'API gateway timeout' });
+    }
+  })
+);
+
+// ──────────────────────────────────────────────────────────────
+// 5) Static files  (now *after* the proxy)
+// ──────────────────────────────────────────────────────────────
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ──────────────────────────────────────────────────────────────
+// 6) Session & locals (for UI routes)
+// ──────────────────────────────────────────────────────────────
+app.use(session({
+  secret           : 'change-this-secret',
+  resave           : false,
+  saveUninitialized: true,
+}));
+app.use((req, res, next) => {
+  res.locals.user       = req.session.user || null;
+  res.locals.currentUrl = req.originalUrl;
+  next();
+});
+
+// ──────────────────────────────────────────────────────────────
+// 7) Log PATCH /api/purchase payloads
+// ──────────────────────────────────────────────────────────────
+app.use('/api/purchase', (req, _res, next) => {
+  const bodyLog = req.rawBody ? req.rawBody.toString() : JSON.stringify(req.body);
+  console.log('⬅️  Received PATCH /api/purchase body:', bodyLog);
+  next();
+});
+
+// ──────────────────────────────────────────────────────────────
+// 8) Fallback body parsing for non-proxied routes
+// ──────────────────────────────────────────────────────────────
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: false }));
+
+// ──────────────────────────────────────────────────────────────
+// 9) EJS views
+// ──────────────────────────────────────────────────────────────
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
+// ──────────────────────────────────────────────────────────────
+// 10) Auth helper
+// ──────────────────────────────────────────────────────────────
+function auth(role) {
+  return (req, res, next) => {
+    if (!req.session.user) return res.redirect('/login');
+    if (role && req.session.user.role !== role)
+      return res.redirect(`/${req.session.user.role}`);
+    next();
+  };
+}
+
+// Dummy local users (UI fallback)
+const users = { alice: 'student', bob: 'instructor', iris: 'institution' };
+
+// ──────────────────────────────────────────────────────────────
+// 11) UI Routes (identical to original)
+// ──────────────────────────────────────────────────────────────
+
+// Home
+app.get('/', (req, res) => {
+  if (!req.session.user) return res.redirect('/login');
+  res.redirect(`/${req.session.user.role}`);
+});
+
+// Auth / signup
+app.get('/signup', (req, res) =>
+  res.render('institution/userManagement', { user: null, title: 'Sign Up' })
+);
+app.get('/login', (req, res) =>
+  res.render('login', { title: 'Log in', error: null, user: null })
+);
+
+// Local-only fallback login (for dev)
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  const role = users[username];
+  if (!role || password !== '1234')
+    return res.render('login', { title: 'Log in', error: 'Invalid credentials', user: null });
+  req.session.user = { username, role };
+  res.redirect(`/${role}`);
+});
+
+app.get('/logout', (req, res) =>
+  req.session.destroy(() => res.redirect('/login'))
+);
+
+// Student routes
+app.get('/student',            auth('student'), (req, res) => res.render('student/dashboard',     { user: req.session.user, title: 'Dashboard' }));
+app.get('/student/statistics', auth('student'), (req, res) => res.render('student/statistics',    { user: req.session.user, title: 'Statistics' }));
+app.get('/student/my-courses', auth('student'), (req, res) => res.render('student/myCourses',     { user: req.session.user, title: 'My Courses' }));
+app.get('/student/request',    auth('student'), (req, res) => res.render('student/reviewRequest', { user: req.session.user, title: 'Review Request' }));
+app.get('/student/status',     auth('student'), (req, res) => res.render('student/reviewStatus',  { user: req.session.user, title: 'Review Status' }));
+app.get('/student/personal',   auth('student'), (req, res) => res.render('student/personal',      { user: req.session.user, title: 'Personal Grades' }));
+
+// Instructor routes
+app.get('/instructor',              auth('instructor'), (req, res) => res.render('instructor/dashboard',   { user: req.session.user, title: 'Dashboard' }));
+app.get('/instructor/post-initial', auth('instructor'), (req, res) => res.render('instructor/postInitial', { user: req.session.user, title: 'Post Initial' }));
+app.get('/instructor/post-final',   auth('instructor'), (req, res) => res.render('instructor/postFinal',   { user: req.session.user, title: 'Post Final' }));
+app.get('/instructor/review-list',  auth('instructor'), (req, res) => res.render('instructor/reviewList',  { user: req.session.user, title: 'Review Requests' }));
+app.get('/instructor/reply',        auth('instructor'), (req, res) => {
+  const request_id = req.query.req || '';
+  res.render('instructor/replyForm', {
+    user         : req.session.user,
+    title        : 'Reply to Review Request',
+    request_id,
+    course_name  : 'software II',
+    exam_period  : 'spring 2025',
+    student_name : 'john doe',
+  });
+});
+app.get('/instructor/statistics',   auth('instructor'), (req, res) => res.render('instructor/statistics',  { user: req.session.user, title: 'Statistics' }));
+
+// Institution routes
+app.get('/institution',                 auth('institution'), (req, res) => res.render('institution/dashboard',       { user: req.session.user, title: 'Dashboard' }));
+app.get('/institution/register',        auth('institution'), (req, res) => res.render('institution/register',        { user: req.session.user, title: 'Register' }));
+app.get('/institution/purchase',        auth('institution'), (req, res) => res.render('institution/purchase',        { user: req.session.user, title: 'Purchase' }));
+app.get('/institution/user-management', auth('institution'), (req, res) => res.render('institution/userManagement', { user: req.session.user, title: 'Users' }));
+app.get('/institution/statistics',      auth('institution'), (req, res) => res.render('institution/statistics',     { user: req.session.user, title: 'Statistics' }));
+
+// ──────────────────────────────────────────────────────────────
+// 12) Start server
+// ──────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✔ Front-end listening on http://localhost:${PORT}`));
+
+===== front-end/public/api/credits.js =====
+// credits.js
+import { request } from './_request.js';
+
+/**
+ * Purchase credits for a given institution.
+ * @param {{ name: string, amount: number }} payload
+ */
+export const purchaseCredits = ({ name, amount }) =>
+  request('/purchase', {
+    method: 'PATCH',
+    body: { name, amount }
+  });
+
+export const getMyCredits = () =>
+  request('/mycredits');
+
+export const spendCredits = (amount, reason) =>
+  request('/spending', {
+    method: 'PATCH',
+    body: { amount, reason }
+  });
+
+===== front-end/public/api/index.js =====
+export * from './credits.js';
+export * from './institution.js';
+export * from './stats.js';
+export * from './personal.js';
+export * from './student.js';
+export * from './instructor.js';
+export * from './users.js';
+
+===== front-end/public/api/institution.js =====
+// institution.js
+import { request } from './_request.js';
+
+export const registerInstitution = ({ name, domain, email }) =>
+  request('/registration', { method: 'POST', body: { name, domain, email } });
+
+export const uploadInitialGrades = file => {
+  const fd = new FormData();
+  fd.append('xlsx', file);
+  return request('/upload_init', { method: 'POST', body: fd });
+};
+
+===== front-end/public/api/instructor.js =====
+// instructor.js
+import { request } from './_request.js';
+
+export const getPendingReviews = ({ course_id, exam_period }) =>
+  request('/instructor/review-list', {
+    method : 'PATCH',
+    body   : { course_id, exam_period }
+  });
+
+export const postInstructorReply = ({
+  user_id, course_id, exam_period, instructor_reply_message, instructor_action
+}) =>
+  request('/instructor/reply', {
+    method : 'PATCH',
+    body   : {
+      user_id,
+      course_id,
+      exam_period,
+      instructor_reply_message,
+      instructor_action
+    }
+  });
+
+===== front-end/public/api/personal.js =====
+// personal.js
+import { request } from './_request.js';
+
+export const getStudentCourses = ({ user_id }) =>
+  request('/personal/courses', { method: 'POST', body: { user_id } });
+
+export const getPersonalGrades = ({ user_id, course_id, exam_period }) =>
+  request('/personal/grades', {
+    method : 'POST',
+    body   : { user_id, course_id, exam_period }
+  });
+
+===== front-end/public/api/_request.js =====
+const API_BASE = '/api';
+
+export async function request(path, { method = 'GET', body, headers } = {}) {
+  // Debug log every API call
+  console.log('→ [API]', method, path, 'body:', body);
+
+  const opts = { method, headers: { ...headers } };
+
+  if (body instanceof FormData) {
+    // let the browser set the multipart boundary
+    opts.body = body;
+  } else if (body !== undefined) {
+    opts.body    = JSON.stringify(body);
+    opts.headers = { 'Content-Type': 'application/json', ...opts.headers };
+  }
+
+  const res  = await fetch(`${API_BASE}${path}`, opts);
+  const json = await res.json().catch(() => ({}));
+
+  if (!res.ok) throw new Error(json.message || res.statusText);
+  return json; // backend wraps responses in { data: … }
+}
+
+===== front-end/public/api/stats.js =====
+// stats.js
+import { request } from './_request.js';
+
+export const persistAndCalculateStats = payload =>
+  request('/stats/persist', { method: 'POST', body: payload });
+
+export const getDistributions = filters =>
+  request('/stats/distributions', { method: 'POST', body: filters });
+
+===== front-end/public/api/student.js =====
+// student.js
+import { request } from './_request.js';
+
+export const postReviewRequest = ({ user_id, course_id, exam_period, student_message }) =>
+  request('/student/reviewRequest', {
+    method : 'PATCH',
+    body   : { user_id, course_id, exam_period, student_message }
+  });
+
+export const getReviewStatus = ({ user_id, course_id, exam_period }) =>
+  request('/student/status', {
+    method : 'PATCH',
+    body   : { user_id, course_id, exam_period }
+  });
+
+===== front-end/public/api/users.js =====
+// users.js
+import { request } from './_request.js';
+
+export const registerUser = payload =>
+  request('/user/register', { method: 'POST', body: payload });
+
+export const loginUser = ({ username, password }) =>
+  request('/user/login',   { method: 'POST', body: { username, password } });
+
+export const deleteUser = ({ user_id }) =>
+  request('/user/delete',  { method: 'DELETE', body: { user_id } });
+
+export const googleLoginUser = token =>
+  request('/user/google-login', { method: 'POST', body: { token } });
+
+===== front-end/public/js/auth/login.js =====
+// front-end/public/js/auth/login.js
+import { flash } from '../../script.js';
+import { loginUser, googleLoginUser } from '../../api/users.js';
+
+const form = document.querySelector('#login-form');
+const errorMsg = document.querySelector('#error-msg');
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  errorMsg.style.display = 'none';
+
+  const input = form.username.value.trim();
+  const password = form.password.value;
+  // Simple email regex
+  const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input);
+  const payload = isEmail ? { email: input, password } : { username: input, password };
+
+  try {
+    await loginUser(payload);
+    // JWT stored by loginUser → now safe to redirect
+    window.location.href = '/';
+  } catch (err) {
+    // show inline error
+    errorMsg.textContent = err.message;
+    errorMsg.style.display = 'block';
+  }
+});
+
+// Optional: Google login
+const googleBtn = document.querySelector('#google-login-btn');
+if (googleBtn) {
+  googleBtn.addEventListener('click', async () => {
+    try {
+      // this is just an example placeholder
+      const googleToken = await getGoogleOAuthTokenSomehow();
+      await googleLoginUser(googleToken);
+      window.location.href = '/';
+    } catch (err) {
+      flash(`Google login failed: ${err.message}`);
+    }
+  });
+}
+
+===== front-end/public/js/auth/logout.js =====
+// front-end/public/js/auth/logout.js
+import { flash } from '../../script.js';
+
+const logoutBtn = document.querySelector('#logout-button');
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', e => {
+    e.preventDefault();
+    // Remove JWT so future API calls are unauthenticated
+    localStorage.removeItem('jwt');
+    flash('Logged out');
+    window.location.href = '/login';
+  });
+}
+
+===== front-end/public/js/auth/signup.js =====
+// auth/signup.js
+import { flash } from '../../script.js';
+import { registerUser } from '../../api/users.js';
+
+const form = document.querySelector('main form');
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const role = form.role.value;
+  const id   = form.id.value.trim();
+
+  try {
+    await registerUser({ role, id });
+    flash('Signup successful! Redirecting to login…');
+    setTimeout(() => (window.location.href = '/login'), 1500);
+  } catch (err) {
+    flash(`Error: ${err.message}`);
+  }
+});
+
+===== front-end/public/js/institution/post-final.js =====
+// public/js/instructor/post-final.js
+import { flash } from '../script.js';
+
+const form = document.querySelector('form[action="/api/grades/upload-final"]');
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const fileInput = form.querySelector('input[type=file]');
+  if (!fileInput.files.length) return flash('Please select an XLSX file.');
+
+  const fd = new FormData();
+  fd.append('xlsx', fileInput.files[0]);
+
+  try {
+    const res = await fetch('/upload_init', { // same endpoint as initial
+      method: 'POST',
+      body: fd,
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.message || res.statusText);
+
+    flash('Final grades uploaded!');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/institution/post-initial.js =====
+// public/js/instructor/post-initial.js
+import { flash } from '../script.js';
+
+const form = document.querySelector('form[action="/api/grades/upload"]') ||
+             document.querySelector('form[action="/api/grades/upload"]');
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const fileInput = form.querySelector('input[type=file]');
+  if (!fileInput.files.length) return flash('Please select an XLSX file.');
+
+  const fd = new FormData();
+  fd.append('xlsx', fileInput.files[0]);
+
+  try {
+    const res = await fetch('/upload_init', {
+      method: 'POST',
+      body: fd,
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.message || res.statusText);
+
+    flash('Initial grades uploaded!');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/institution/purchase.js =====
+import { flash } from '../../script.js';
+import { purchaseCredits } from '../../api/credits.js';
+
+console.log('🛠️ purchase.js loaded');
+
+const form = document.querySelector('#purchase-form');
+console.log('🛠️ purchase form element:', form);
+
+if (!form) {
+  console.error('⚠️ #purchase-form not found!');
+} else {
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    console.log('🛠️ submit event fired');
+
+    const instName = form.instName.value.trim();
+    const amount   = Number(form.amount.value);
+    console.log('🛠️ form values:', { instName, amount });
+
+    try {
+      const response = await purchaseCredits({ name: instName, amount });
+      console.log('🛠️ API response:', response);
+      const { data } = response;
+      flash(`Purchased! New balance: ${data.balance}`);
+    } catch (err) {
+      console.error('🛠️ purchaseCredits error:', err);
+      flash(err.message);
+    }
+  });
+}
+
+===== front-end/public/js/institution/register.js =====
+// institution/register.js
+import { flash } from '../../script.js';
+import { registerInstitution } from '../../api/institution.js';
+
+const form = document.querySelector('#register-inst-form');
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const name   = form.name.value.trim();
+  const domain = form.domain.value.trim();
+  const email  = form.email.value.trim();
+
+  try {
+    await registerInstitution({ name, domain, email });
+    flash('Institution registered!');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/institution/statistics.js =====
+// institution/statistics.js
+import { flash } from '../../script.js';
+import { getDistributions } from '../../api/stats.js';
+
+const btn = document.querySelector('button.button--secondary');
+
+btn.addEventListener('click', async () => {
+  try {
+    const { data } = await getDistributions({ /* filters */ });
+    console.log('Distributions:', data);
+    flash('Distributions fetched—check console.');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/institution/user-management.js =====
+// institution/user-management.js
+import { flash } from '../../script.js';
+import { registerUser } from '../../api/users.js';
+
+const form = document.querySelector('#user-mgmt-form');
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const role = form.role.value;
+  const id   = form.id.value.trim();
+
+  try {
+    await registerUser({ role, id });
+    flash('User added!');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/instructor/reply.js =====
+// public/js/instructor/reply.js
+
+import { flash } from '../../script.js';
+import { postInstructorReply } from '../../api/instructor.js';
+
+// Now matching action="/api/instructor/reply"
+const form = document.querySelector('form[action="/api/instructor/reply"]');
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+
+  // grab the request ID from the querystring
+  const params = new URLSearchParams(location.search);
+  const reqId  = params.get('req');
+
+  // you can also pull these from hidden inputs if you prefer
+  const course_id               = 'software II';
+  const exam_period             = 'spring 2025';
+  const user_id                 = reqId;
+  const instructor_reply_message = form.message.value.trim();
+  const instructor_action        = form.decision.value;
+
+  try {
+    await postInstructorReply({
+      user_id,
+      course_id,
+      exam_period,
+      instructor_reply_message,
+      instructor_action
+    });
+    flash('Reply sent!');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/instructor/review-list.js =====
+// instructor/review-list.js
+import { flash } from '../../script.js';
+import { getPendingReviews } from '../../api/instructor.js';
+
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const { data } = await getPendingReviews({
+      course_id: 'software II',
+      exam_period: 'spring 2025'
+    });
+
+    const tbody = document.querySelector('table tbody');
+    tbody.innerHTML = data
+      .map(r => `
+        <tr>
+          <td>${r.course_name}</td>
+          <td>${r.exam_period}</td>
+          <td>${r.student}</td>
+          <td><a class="button" href="/instructor/reply?req=${r.id}">Reply</a></td>
+        </tr>
+      `)
+      .join('');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/student/my-courses.js =====
+// student/my-courses.js
+import { flash } from '../../script.js';
+import { getStudentCourses } from '../../api/personal.js';
+
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const { data } = await getStudentCourses({ user_id: 'alice' });
+
+    const tbody = document.querySelector('table tbody');
+    tbody.innerHTML = data
+      .map(c => `
+        <tr ${c.status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
+          <td>${c.course_name}</td>
+          <td>${c.exam_period}</td>
+          <td>${c.status}</td>
+          <td>
+            <a href="/student/personal?course=${c.id}" class="button">View grades</a>
+            <a href="/student/request?course=${c.id}" class="button${c.status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
+            <a href="/student/status?course=${c.id}"  class="button${c.status === 'open' ? ' button--secondary' : ''}">Status</a>
+          </td>
+        </tr>
+      `)
+      .join('');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/student/personal.js =====
+// student/personal.js
+import { flash } from '../../script.js';
+import { getPersonalGrades } from '../../api/personal.js';
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const params      = new URLSearchParams(location.search);
+  const course_id   = params.get('course');
+  const exam_period = 'spring 2025';
+  const user_id     = 'alice';
+
+  try {
+    const { data } = await getPersonalGrades({ user_id, course_id, exam_period });
+
+    document.querySelector('input[readonly][value]').value = data.total;
+    // populate Q1–Q3 similarly…
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/student/review-request.js =====
+// student/review-request.js
+import { flash } from '../../script.js';
+import { postReviewRequest } from '../../api/student.js';
+
+const form = document.querySelector('form[action="/api/appeals"]');
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const params       = new URLSearchParams(location.search);
+  const course_id    = params.get('course');
+  const exam_period  = 'spring 2025';
+  const user_id      = 'alice';
+  const student_message = form.message.value.trim();
+
+  try {
+    await postReviewRequest({ user_id, course_id, exam_period, student_message });
+    flash('Review request submitted!');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/student/review-status.js =====
+// student/review-status.js
+import { flash } from '../../script.js';
+import { getReviewStatus } from '../../api/student.js';
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const params       = new URLSearchParams(location.search);
+  const course_id    = params.get('course');
+  const exam_period  = 'spring 2025';
+  const user_id      = 'alice';
+
+  try {
+    const { data } = await getReviewStatus({ user_id, course_id, exam_period });
+    document.querySelector('textarea[readonly]').textContent = data.instructor_message;
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/js/student/statistics.js =====
+// student/statistics.js
+import { flash } from '../../script.js';
+import { getDistributions } from '../../api/stats.js';
+
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const { data } = await getDistributions({ /* filters */ });
+    console.log('Stats:', data);
+    flash('Statistics loaded—see console.');
+  } catch (err) {
+    flash(err.message);
+  }
+});
+
+===== front-end/public/script.js =====
+// optional flash helper
+export function flash(msg) {
+  const d = document.createElement("div");
+  d.textContent = msg;
+  d.style.cssText =
+    "position:fixed;top:1rem;right:1rem;background:#006dd0;color:#fff;padding:0.5rem 1rem;border-radius:4px;z-index:1000";
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 3000);
+}
+
+===== front-end/public/styles.css =====
+/* 0) Make every element use border-box */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* 1) Full-width reset */
+html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  font-family: Arial, sans-serif;
+  background: var(--bg);
+  color: #333;
+  min-height: 100vh;
+}
+
+/* 2) CSS variables */
+:root {
+  --primary:       #006dd0;
+  --primary-dark:  #004c97;
+  --secondary:     #69727d;
+  --bg:            #f5f7fa;
+  --card-bg:       #fff;
+  --radius:        0.5rem;
+  --gap:           1rem;
+}
+
+/* 1) Fluid full-width container without overflow */
+.container {
+  width: 100%;         /* fill the viewport */
+  max-width: 100%;     /* never exceed it */
+  margin: 0;           /* drop any auto-margins */
+  padding: 1rem 2rem;  /* internal gutters */
+}
+
+/* Login page wrapper (only on /login) */
+.login-container {
+  width: 100%;
+  max-width: 380px;            /* constrain form width */
+  margin: auto;                /* center horizontally & vertically */
+  min-height: calc(100vh - 70px); /* push below the sticky navbar */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;     /* vertical centering */
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+
+
+/* 4) Card component */
+.card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  padding: 1.5rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* 5) Dashboard grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--gap);
+}
+
+/* 6) Button-link for cards */
+.button-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: inherit;
+  height: 100px;
+  font-weight: 600;
+}
+
+/* 7) Sticky full-width navbar */
+nav.navbar, nav {
+  background: var(--primary-dark);
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 100;
+}
+nav a { 
+  color: #fff; 
+  text-decoration: none; 
+  margin-left: 1rem; 
+}
+
+/* 8) Primary buttons (you can keep your old .button if you want, but update colors) */
+.button {
+  background: var(--primary);
+  color: #fff;
+  padding: 0.35rem 0.9rem;
+  border: none;
+  border-radius: 4px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.button--secondary { 
+  background: var(--secondary); 
+}
+
+/* 9) Utilities */
+.mt-2 { margin-top: 2rem; }
+
+/* 10) Keep the rest of your existing styles unchanged */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #d0d7de;
+  padding: 0.45rem;
+  text-align: left;
+}
+th { background: #ebf1f8; }
+
+fieldset {
+  border: 1px solid #c2c5c9;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+legend { font-weight: bold; }
+
+.panel {
+  border: 1px solid #c2c5c9;
+  margin: 1rem 0;
+}
+.panel-header {
+  background: #e6e7ea;
+  padding: 0.45rem 0.6rem;
+  font-weight: bold;
+}
+
+.form-group {
+  margin-bottom: 0.6rem;
+}
+label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+input, select, textarea {
+  width: 100%;
+  padding: 0.45rem;
+  border: 1px solid #ccd1d6;
+  border-radius: 4px;
+}
+
+/* If you have additional .navbar__* rules, leave them intact below */
+.navbar__brand a { color: #fff; font-weight: 600; text-decoration: none; font-size: 1.2rem }
+.navbar__links { display: flex; gap: 1.1rem; list-style: none; margin: 0; padding: 0 }
+.navbar__links a { color: #fff; text-decoration: none }
+.navbar__links .active { border-bottom: 2px solid #ffeb3b }
+.navbar__auth { display: flex; align-items: center; gap: 0.8rem; }
+
+===== front-end/views/institution/dashboard.ejs =====
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h1>Institution Dashboard</h1>
+    <ul>
+      <div class="dashboard-grid mt-2">
+        <a href="/institution/register"       class="card button-link">1. Register institution</a>
+        <a href="/institution/purchase"       class="card button-link">2. Purchase credits</a>
+        <a href="/institution/statistics"     class="card button-link">3. View statistics</a>
+      </div>
+
+  </main>
+</body></html>
+
+===== front-end/views/institution/purchase.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head',{ title }) %>
+</head>
+<body>
+  <%- include('../partials/navbar',{ user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <fieldset class="purchase-panel">
+      <legend>Buy credits</legend>
+      <form id="purchase-form">
+        <div class="purchase-row">
+          <div class="form-group">
+            <label for="inst-name">Institution:</label>
+            <select id="inst-name" name="instName" required>
+              <option value="NTUA">NTUA</option>
+              <option value="EKPA">EKPA</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="amount">Amount:</label>
+            <input id="amount" type="number" name="amount" min="1" required/>
+          </div>
+          <div class="form-group form-group--button">
+            <button class="button" type="submit">Buy</button>
+          </div>
+        </div>
+      </form>
+    </fieldset>
+    <%- include('../partials/messageBox') %>
+  </main>
+
+  <script type="module" src="/js/institution/purchase.js"></script>
+</body>
+</html>
+
+===== front-end/views/institution/register.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head',{title}) %>
+</head>
+<body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <fieldset><legend>Institutions</legend>
+      <form id="register-inst-form">
+        <div class="form-group"><label>Name</label><input name="name" required/></div>
+        <div class="form-group"><label>Domain</label><input name="domain" required/></div>
+        <div class="form-group"><label>Contact e-mail</label><input name="email" type="email" required/></div>
+        <button class="button" type="submit">Save</button>
+      </form>
+    </fieldset>
+    <%- include('../partials/messageBox') %>
+  </main>
+
+  <script type="module" src="/js/institution/register.js"></script>
+</body>
+</html>
+
+===== front-end/views/institution/statistics.ejs =====
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <div class="panel">
+      <div class="panel-header">Available course statistics
+        <button class="button button--secondary" style="float:right;">filter my courses</button>
+      </div>
+      <table>
+        <thead><tr><th>course name</th><th>exam period</th><th>initial submission</th><th>final submission</th></tr></thead>
+        <tbody><tr><td>physics</td><td>fall 2024</td><td>2025‑02‑22</td><td>2025‑02‑28</td></tr></tbody>
+      </table>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.6rem;margin-top:1rem;">
+        <% for(let i=0;i<6;i++){ %>
+          <div style="border:1px solid #d0d7de;height:120px;">chart</div>
+        <% } %>
+      </div>
+    </div>
+  </main>
+</body></html>
+
+===== front-end/views/institution/userManagement.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head',{ title }) %>
+</head>
+<body>
+  <%- include('../partials/navbar',{ user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <fieldset>
+      <legend>Users</legend>
+      <form id="user-mgmt-form" novalidate>
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" required />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" required />
+        </div>
+
+        <div class="form-group">
+          <label for="user-id">ID</label>
+          <input id="user-id" name="id" type="text" required />
+        </div>
+
+        <div class="form-group">
+          <label for="role">Type</label>
+          <select id="role" name="role" required>
+            <option value="institution_representative">Institution representative</option>
+            <option value="instructor">Instructor</option>
+            <option value="student">Student</option>
+          </select>
+        </div>
+
+        <div class="form-group form-group--button" style="display:flex;gap:0.5rem;">
+          <button class="button" type="submit">Add user</button>
+          <button class="button button--secondary" type="button" id="change-password-btn">
+            Change password
+          </button>
+        </div>
+      </form>
+    </fieldset>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+
+  <script type="module" src="/js/institution/user-management.js"></script>
+</body>
+</html>
+
+===== front-end/views/instructor/dashboard.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Instructor Dashboard' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h1>Instructor Dashboard</h1>
+    <div class="dashboard-grid mt-2">
+      <a href="/instructor/post-initial" class="card button-link">1. Post initial grades</a>
+      <a href="/instructor/review-list"  class="card button-link">2. Review requests</a>
+      <a href="/instructor/reply"        class="card button-link">3. Reply to request</a>
+      <a href="/instructor/post-final"   class="card button-link">4. Post final grades</a>
+      <a href="/instructor/statistics"   class="card button-link">5. View grade statistics</a>
+    </div>
+
+  </main>
+</body>
+</html>
+
+===== front-end/views/instructor/postFinal.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Post Final Grades' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Instructor: <%= user.username %></h2>
+
+    <fieldset><legend>FINAL GRADES POSTING</legend>
+      <form id="upload-final-form" enctype="multipart/form-data">
+        <div class="form-group">
+          <label for="xlsx-final">XLSX file with FINAL grades</label>
+          <input id="xlsx-final" type="file" name="xlsx" accept=".xlsx"
+                 style="width:100%;margin:0.4rem 0;"/>
+        </div>
+        <button class="button" type="submit">Submit Final Grades</button>
+      </form>
+    </fieldset>
+
+    <fieldset><legend>XLSX file parsing (preview)</legend>
+      <div class="form-group"><label>Course:</label><input readonly value="" /></div>
+      <div class="form-group"><label>Period:</label><input readonly value="" /></div>
+      <div class="form-group"><label>Number of grades:</label><input readonly value="" style="width:120px"/></div>
+      <button class="button">CONFIRM</button>
+      <button class="button button--secondary">CANCEL</button>
+    </fieldset>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+
+  <script type="module" src="/js/institution/post-final.js"></script>
+</body>
+</html>
+
+===== front-end/views/instructor/postInitial.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Post Initial Grades' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Instructor: <%= user.username %></h2>
+
+    <fieldset><legend>INITIAL GRADES POSTING</legend>
+      <form id="upload-init-form" enctype="multipart/form-data">
+        <div class="form-group">
+          <label for="xlsx-init">XLSX file with initial grades</label>
+          <input id="xlsx-init" type="file" name="xlsx" accept=".xlsx"
+                 style="width:100%;margin:0.4rem 0;"/>
+        </div>
+        <button class="button" type="submit">Submit Initial Grades</button>
+      </form>
+    </fieldset>
+
+    <fieldset><legend>XLSX file parsing (preview)</legend>
+      <div class="form-group"><label>Course:</label><input readonly value="" /></div>
+      <div class="form-group"><label>Period:</label><input readonly value="" /></div>
+      <div class="form-group"><label>Number of grades:</label><input readonly value="" style="width:120px"/></div>
+      <button class="button">CONFIRM</button>
+      <button class="button button--secondary">CANCEL</button>
+    </fieldset>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+
+  <script type="module" src="/js/institution/post-initial.js"></script>
+</body>
+</html>
+
+===== front-end/views/instructor/replyForm.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Reply to Review Request' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Instructor: <%= user.username %></h2>
+
+    <!-- Review list table above omitted for brevity -->
+
+    <div class="panel">
+      <div class="panel-header">
+        REPLY TO GRADE REVIEW REQUEST&nbsp;&nbsp;
+        <%= course_name %>&nbsp;<%= exam_period %>&nbsp;<%= student_name %>
+      </div>
+
+      <!-- JS-driven reply form -->
+      <form id="instructor-reply-form">
+        <input type="hidden" name="req" value="<%= request_id %>" />
+
+        <div class="form-group">
+          <label>Action</label>
+          <select name="decision" style="width:180px;">
+            <option value="Total accept">Total accept</option>
+            <option value="Partial accept">Partial accept</option>
+            <option value="Reject">Reject</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Instructor's message</label>
+          <textarea name="message" style="width:100%;height:80px;"></textarea>
+        </div>
+
+        <button class="button button--secondary" type="button">
+          Upload attachment
+        </button>
+        <button class="button" type="submit" style="float:right;">
+          Send Reply
+        </button>
+        <div style="clear:both;"></div>
+      </form>
+    </div>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+
+  <script type="module" src="/js/instructor/reply.js"></script>
+</body>
+</html>
+
+===== front-end/views/instructor/reviewList.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Review Requests' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Instructor: <%= user.username %></h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Course Name</th>
+          <th>Exam Period</th>
+          <th>Student</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- rows will be injected here by JS -->
+      </tbody>
+    </table>
+  </main>
+
+  <script type="module" src="/js/instructor/review-list.js"></script>
+</body>
+</html>
+
+===== front-end/views/instructor/statistics.ejs =====
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <div class="panel">
+      <div class="panel-header">Available course statistics
+        <button class="button button--secondary" style="float:right;">filter my courses</button>
+      </div>
+      <table>
+        <thead><tr><th>course name</th><th>exam period</th><th>initial submission</th><th>final submission</th></tr></thead>
+        <tbody><tr><td>physics</td><td>fall 2024</td><td>2025‑02‑22</td><td>2025‑02‑28</td></tr></tbody>
+      </table>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.6rem;margin-top:1rem;">
+        <% for(let i=0;i<6;i++){ %>
+          <div style="border:1px solid #d0d7de;height:120px;">chart</div>
+        <% } %>
+      </div>
+    </div>
+  </main>
+</body></html>
+
+===== front-end/views/login.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head',{title: 'Log in'}) %>
+</head>
+<body>
+  <%- include('partials/navbar' ) %>
+  <main class="login-container">
+    <fieldset><legend>Welcome to clearSKY</legend>
+      <!-- changed: no action/method, JS will handle -->
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label for="username">User name</label>
+          <input id="username" name="username" required />
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" required />
+        </div>
+        <button class="button" type="submit">Login</button>
+        <button class="button button--secondary" type="button" id="google-login-btn">
+          Login with Google
+        </button>
+      </form>
+
+      <p id="error-msg" style="color: #c00; margin-top: 1rem; display: none;"></p>
+    </fieldset>
+  </main>
+
+  <script type="module" src="/js/auth/login.js"></script>
+</body>
+</html>
+
+===== front-end/views/partials/head.ejs =====
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<link rel="stylesheet" href="/styles.css"/>
+<title><%= title %> | clearSKY</title>
+
+===== front-end/views/partials/header.ejs =====
+<div style="background:#e6e7ea;border:1px solid #c2c5c9;margin-bottom:1rem;padding:1rem">
+</div>
+
+===== front-end/views/partials/messageBox.ejs =====
+<div style="margin-top:1.5rem;border:1px solid #c2c5c9">
+  <div style="background:#e6e7ea;padding:0.4rem 0.6rem;font-weight:bold">
+    Message area
+  </div>
+  <div style="height:100px"></div>
+</div>
+
+===== front-end/views/partials/navbar.ejs =====
+<nav class="navbar">
+  <div class="navbar__brand">
+    <a href="/" class="navbar__logo">clearSKY</a>
+  </div>
+
+  <% if (!user) { %>
+    <!-- Guest nav -->
+    <ul class="navbar__links">
+      <li>
+        <a href="/login"
+           class="<%= currentUrl === '/login' ? 'active' : '' %>">
+          Log in
+        </a>
+      </li>
+    </ul>
+  <% } else { %>
+    <!-- Authenticated nav, role-aware -->
+    <ul class="navbar__links">
+      <% if (user.role === 'student') { %>
+        <%- include('./nav-student',   { currentUrl }) %>
+      <% } else if (user.role === 'instructor') { %>
+        <%- include('./nav-instructor',{ currentUrl }) %>
+      <% } else if (user.role === 'institution') { %>
+        <%- include('./nav-institution',{ currentUrl }) %>
+      <% } %>
+    </ul>
+
+    <div class="navbar__auth">
+      <span class="navbar__user">Hi, <%= user.username %></span>
+      <!-- changed to a button-like link with id -->
+      <a href="/login" id="logout-button" class="button button--secondary">
+        Log out
+      </a>
+    </div>
+  <% } %>
+</nav>
+
+===== front-end/views/partials/nav-institution.ejs =====
+<li><a class="<%= currentUrl.startsWith('/institution/register') ? 'active' : '' %>"
+       href="/institution/register">Register</a></li>
+<li><a class="<%= currentUrl.startsWith('/institution/purchase') ? 'active' : '' %>"
+       href="/institution/purchase">Purchase</a></li>
+<li><a class="<%= currentUrl.startsWith('/institution/user-management') ? 'active' : '' %>"
+       href="/institution/user-management">Users</a></li>
+<li><a class="<%= currentUrl.startsWith('/institution/statistics') ? 'active' : '' %>"
+       href="/institution/statistics">Statistics</a></li>
+       
+===== front-end/views/partials/nav-instructor.ejs =====
+<li><a class="<%= currentUrl.startsWith('/instructor/post-initial') ? 'active' : '' %>"
+       href="/instructor/post-initial">Post initial</a></li>
+<li><a class="<%= currentUrl.startsWith('/instructor/post-final') ? 'active' : '' %>"
+       href="/instructor/post-final">Post final</a></li>
+<li><a class="<%= currentUrl.startsWith('/instructor/review-list') ? 'active' : '' %>"
+       href="/instructor/review-list">Review list</a></li>
+<li><a class="<%= currentUrl.startsWith('/instructor/reply') ? 'active' : '' %>"
+       href="/instructor/reply">Reply form</a></li>
+<li><a class="<%= currentUrl.startsWith('/instructor/statistics') ? 'active' : '' %>"
+       href="/instructor/statistics">Statistics</a></li>
+
+===== front-end/views/partials/nav-student.ejs =====
+<li><a class="<%= currentUrl.startsWith('/student/my-courses') ? 'active' : '' %>"
+       href="/student/my-courses">My courses</a></li>
+<li><a class="<%= currentUrl.startsWith('/student/request') ? 'active' : '' %>"
+       href="/student/request">New review</a></li>
+<li><a class="<%= currentUrl.startsWith('/student/status') ? 'active' : '' %>"
+       href="/student/status">Review status</a></li>
+<li><a class="<%= currentUrl.startsWith('/student/statistics') ? 'active' : '' %>"
+       href="/student/statistics">Statistics</a></li>
+<li><a class="<%= currentUrl.startsWith('/student/personal') ? 'active' : '' %>"
+       href="/student/personal">Personal grades</a></li>
+
+===== front-end/views/signup.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head', { title: 'Sign up' }) %>
+</head>
+<body>
+  <%- include('partials/navbar') %>
+
+  <main class="login-container">
+    <fieldset>
+      <legend>Create account</legend>
+
+      <form id="signup-form" novalidate>
+        <div class="form-group">
+          <label>E-mail</label>
+          <input name="email" type="email" required />
+        </div>
+
+        <div class="form-group">
+          <label>Password</label>
+          <input name="password" type="password" required />
+        </div>
+
+        <div class="form-group">
+          <label>Role</label>
+          <select name="role">
+            <option value="student">Student</option>
+            <option value="instructor">Instructor</option>
+            <option value="institution_representative">
+              Institution representative
+            </option>
+          </select>
+        </div>
+
+        <button class="button" type="submit">Sign up</button>
+        <a class="button button--secondary" href="/login">Back to log-in</a>
+      </form>
+    </fieldset>
+  </main>
+
+  <script type="module" src="/js/auth/signup.js"></script>
+</body>
+</html>
+
+===== front-end/views/student/dashboard.ejs =====
+<!DOCTYPE html><html lang="en"><head>
+  <%- include('../partials/head',{title}) %>
+</head><body>
+  <%- include('../partials/navbar',{user}) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h1>Student Dashboard</h1>
+    <div class="dashboard-grid mt-2">
+      <a href="/student/statistics" class="card button-link">1. View course statistics</a>
+      <a href="/student/my-courses" class="card button-link">2. My courses</a>
+      <a href="/student/request"    class="card button-link">3. Grade review request</a>
+      <a href="/student/status"     class="card button-link">4. Review request status</a>
+      <a href="/student/personal"   class="card button-link">5. View personal grades</a>
+    </div>
+
+  </main>
+</body></html>
+
+===== front-end/views/student/myCourses.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'My Courses' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Student: <%= user.username %></h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Course Name</th>
+          <th>Exam Period</th>
+          <th>Grading Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Populated by JS -->
+      </tbody>
+    </table>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+
+  <script type="module" src="/js/student/my-courses.js"></script>
+</body>
+</html>
+
+===== front-end/views/student/personal.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'View Personal Grades' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Student: <%= user.username %></h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- JS will inject rows for Total, Q1, Q2, Q3, etc. -->
+      </tbody>
+    </table>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+
+  <script type="module" src="/js/student/personal.js"></script>
+</body>
+</html>
+
+===== front-end/views/student/reviewRequest.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'New Review Request' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Student: <%= user.username %></h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Course Name</th>
+          <th>Exam Period</th>
+          <th>Grading Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Populated by JS -->
+      </tbody>
+    </table>
+
+    <div class="panel">
+      <div class="panel-header">NEW REVIEW REQUEST</div>
+      <form id="student-review-request-form">
+        <div class="form-group">
+          <label>Message to instructor</label>
+          <textarea name="message" style="width:100%;height:120px;"
+            placeholder="please review my grade..."></textarea>
+        </div>
+        <button class="button" type="submit" style="float:right;">Submit</button>
+        <div style="clear:both;"></div>
+      </form>
+    </div>
+  </main>
+
+  <script type="module" src="/js/student/review-request.js"></script>
+</body>
+</html>
+
+===== front-end/views/student/reviewStatus.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head', { title: 'Review Request Status' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar', { user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+    <h2>Student: <%= user.username %></h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Course Name</th>
+          <th>Exam Period</th>
+          <th>Grading Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Populated by JS -->
+      </tbody>
+    </table>
+
+    <div class="panel">
+      <div class="panel-header">REVIEW REQUEST STATUS</div>
+      <div class="form-group">
+        <label>Message from instructor</label>
+        <textarea readonly style="width:100%;height:100px;"></textarea>
+      </div>
+      <button class="button">Acknowledge</button>
+    </div>
+  </main>
+
+  <script type="module" src="/js/student/review-status.js"></script>
+</body>
+</html>
+
+===== front-end/views/student/statistics.ejs =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head',{ title: 'Course Statistics' }) %>
+</head>
+<body>
+  <%- include('../partials/navbar',{ user }) %>
+  <main class="container">
+    <%- include('../partials/header') %>
+
+    <div class="panel">
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Available course statistics</span>
+        <a href="/student/my-courses" class="button button--secondary">My Courses</a>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Course Name</th>
+            <th>Exam Period</th>
+            <th>Initial Submission</th>
+            <th>Final Submission</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+
+    <div id="stats-charts" class="grid-stats">
+      <!-- JS will render charts here -->
+    </div>
+
+    <%- include('../partials/messageBox') %>
+  </main>
+
+  <script type="module" src="/js/student/statistics.js"></script>
+</body>
+</html>
+

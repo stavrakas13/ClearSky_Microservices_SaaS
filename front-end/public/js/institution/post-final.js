@@ -1,7 +1,7 @@
 // public/js/instructor/post-final.js
 import { flash } from '../script.js';
 
-const form = document.querySelector('form[action="/api/grades/upload-final"]');
+const form = document.querySelector('form[action="/grades/upload-final"]');
 form.addEventListener('submit', async e => {
   e.preventDefault();
   const fileInput = form.querySelector('input[type=file]');

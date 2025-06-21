@@ -62,6 +62,7 @@ func rpcRequest(ch *amqp.Channel, exchange, routingKey string, reqBody interface
 func HandleUserRegister(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
 		Email    string `json:"email"`
+		Username string `json:"username"`
 		Password string `json:"password"`
 		Role     string `json:"role"` // add this field
 	}
@@ -72,6 +73,7 @@ func HandleUserRegister(c *gin.Context, ch *amqp.Channel) {
 	payload := map[string]interface{}{
 		"type":     "register",
 		"email":    req.Email,
+		"username": req.Username,
 		"password": req.Password,
 		"role":     req.Role, // add this line
 	}
@@ -87,6 +89,7 @@ func HandleUserRegister(c *gin.Context, ch *amqp.Channel) {
 func HandleUserLogin(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
 		Email    string `json:"email"`
+		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -96,6 +99,7 @@ func HandleUserLogin(c *gin.Context, ch *amqp.Channel) {
 	payload := map[string]interface{}{
 		"type":     "login",
 		"email":    req.Email,
+		"username": req.Username,
 		"password": req.Password,
 	}
 	resp, err := rpcRequest(ch, "orchestrator.commands", "auth.login", payload)
@@ -166,6 +170,7 @@ func HandleUserChangePassword(c *gin.Context, ch *amqp.Channel) {
 		"old_password": req.OldPassword,
 		"new_password": req.NewPassword,
 	}
+	log.Printf("[HandleUserLogin] → publishing RPC payload: %+v\n", payload)
 	resp, err := rpcRequest(ch, "orchestrator.commands", "auth.change_password", payload)
 	if err != nil {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})

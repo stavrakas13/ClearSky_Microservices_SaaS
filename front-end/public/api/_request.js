@@ -1,41 +1,27 @@
-// front-end/public/api/_request.js
-const API_BASE = '/api';
+// file: front-end/public/api/_request.js
+
+// Base URL of your Go API
+const API_BASE = window.GO_API_URL || 'http://localhost:8080';
 
 export async function request(path, { method = 'GET', body, headers } = {}) {
-  // Debug log every API call
   console.log('→ [API]', method, path, 'body:', body);
 
-  // Pull JWT from localStorage (if any)
-  const token = localStorage.getItem('jwt');
-
-  // Build options, injecting Authorization header if we have a token
-  const opts = {
-    method,
-    headers: {
-      ...headers,
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
-  };
+  const opts = { method, headers: { ...headers } };
 
   if (body instanceof FormData) {
-    // let the browser set the multipart boundary
+    // Let the browser set the multipart boundary for form data
     opts.body = body;
   } else if (body !== undefined) {
-    opts.body = JSON.stringify(body);
-    opts.headers = {
-      'Content-Type': 'application/json',
-      ...opts.headers
-    };
+    opts.body    = JSON.stringify(body);
+    opts.headers = { 'Content-Type': 'application/json', ...opts.headers };
   }
 
-  // Send credentials (cookies) too, if you ever need them
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...opts,
-    credentials: 'include'
-  });
-
+  const res = await fetch(`${API_BASE}${path}`, opts);
   const json = await res.json().catch(() => ({}));
 
-  if (!res.ok) throw new Error(json.message || res.statusText);
-  return json; // backend wraps responses in { data: … }
+  if (!res.ok) {
+    throw new Error(json.message || res.statusText);
+  }
+
+  return json; // Expecting { data: … } shape from your API
 }

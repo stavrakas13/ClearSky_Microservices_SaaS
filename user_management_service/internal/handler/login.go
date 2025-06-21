@@ -12,7 +12,8 @@ import (
 )
 
 type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
+	Email    string `json:"email" binding:"omitempty,email"`
+	Username string `json:"username" binding:"omitempty"`
 	Password string `json:"password" binding:"required"`
 }
 
@@ -25,8 +26,18 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var user model.User
-		if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		if req.Email != "" {
+			if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+				return
+			}
+		} else if req.Username != "" {
+			if err := db.Where("username = ?", req.Username).First(&user).Error; err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+				return
+			}
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Email or username required"})
 			return
 		}
 
@@ -42,7 +53,10 @@ func Login(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"token": token,
+			"token":  token,
+			"role":   user.Role,
+			"userId": user.ID,
+			"status": "ok",
 		})
 	}
 }

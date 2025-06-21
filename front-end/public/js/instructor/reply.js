@@ -4,7 +4,7 @@ import { flash } from '../../script.js';
 import { postInstructorReply } from '../../api/instructor.js';
 
 // Now matching action="/api/instructor/reply"
-const form = document.querySelector('form[action="/api/instructor/reply"]');
+const form = document.querySelector('form[action="/instructor/reply"]');
 
 form.addEventListener('submit', async e => {
   e.preventDefault();
