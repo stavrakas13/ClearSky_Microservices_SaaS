@@ -27,7 +27,10 @@
 
     <div class="navbar__auth">
       <span class="navbar__user">Hi, <%= user.username %></span>
-      <a href="/logout" class="button button--secondary">Log out</a>
+      <!-- changed to a button-like link with id -->
+      <a href="/login" id="logout-button" class="button button--secondary">
+        Log out
+      </a>
     </div>
   <% } %>
 </nav>
