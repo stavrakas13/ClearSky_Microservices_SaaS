@@ -11,7 +11,7 @@ async function main() {
     await client.connect();
     console.log('✅ Connected to MongoDB');
 
-    const db = client.db('final_grades');
+    const db = client.db('init_grades');
     const colName = 'grading';
 
     // 1) Αν υπάρχει ήδη, drop it

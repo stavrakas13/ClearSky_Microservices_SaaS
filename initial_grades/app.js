@@ -61,7 +61,7 @@ if (missingVars.length > 0) {
     process.exit(1);
   }
 
-  const creditsDb = creditsClient.db('final_grades');
+  const creditsDb = creditsClient.db('init_grades');
 
   const Grade = mongoose.model('Grade', new mongoose.Schema({
     AM: String, name: String, email: String,
