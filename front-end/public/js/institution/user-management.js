@@ -1,4 +1,4 @@
-// institution/user-management.js
+// front-end/public/js/institution/user-management.js
 import { flash } from '../../script.js';
 import { registerUser } from '../../api/users.js';
 
@@ -6,13 +6,19 @@ const form = document.querySelector('#user-mgmt-form');
 
 form.addEventListener('submit', async e => {
   e.preventDefault();
-  const role = form.role.value;
-  const id   = form.id.value.trim();
+  const username = form.username.value.trim();
+  const password = form.password.value;
+  const role     = form.role.value;
+
+  if (!username || !password) {
+    return flash('Username and password are required');
+  }
 
   try {
-    await registerUser({ role, id });
+    await registerUser({ username, password, role });
     flash('User added!');
+    form.reset();
   } catch (err) {
-    flash(err.message);
+    flash(`Error: ${err.message}`);
   }
 });

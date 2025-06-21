@@ -33,7 +33,7 @@ func SetupDatabase() *gorm.DB {
         ID:           uuid.NewString(),
         Username:     "admin",
         PasswordHash: string(hash),
-        Role:         "representative",
+        Role:         "institution_representative",
     }
     // Only create if Username = "admin" is not found
     if err := db.FirstOrCreate(&admin, model.User{Username: "admin"}).Error; err != nil {

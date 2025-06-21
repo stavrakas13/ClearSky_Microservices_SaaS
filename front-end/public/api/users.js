@@ -1,20 +1,28 @@
-// file: front-end/public/api/users.js
+// front-end/public/api/users.js
 import { request } from './_request.js';
 
 /**
- * Log in an existing user. On success, returns { role, status, token, userId }.
+ * Register a new user by username/password/role only.
+ * @param {{ username: string, password: string, role: string }} payload
  */
-export const loginUser = ({ username, password, email }) =>
-  request('/user/login', {
-    method : 'POST',
-    body   : email
-      ? { email, password }
-      : { username, password }
+export const registerUser = ({ username, password, role }) =>
+  request('/user/register', {
+    method: 'POST',
+    body: { username, password, role }
   }).then(response => {
-    if (!response.role) {
-      throw new Error(response.message || 'Login failed');
-    }
-    // store JWT if returned
+    if (response.error) throw new Error(response.error);
+    return response;
+  });
+
+/**
+ * Log in an existing user.
+ */
+export const loginUser = ({ username, password }) =>
+  request('/user/login', {
+    method: 'POST',
+    body: { username, password }
+  }).then(response => {
+    if (!response.role) throw new Error(response.message || 'Login failed');
     if (response.token) localStorage.setItem('jwt', response.token);
     return response;
   });

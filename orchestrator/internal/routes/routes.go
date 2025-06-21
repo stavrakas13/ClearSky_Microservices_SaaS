@@ -22,8 +22,8 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		AllowCredentials: true,
 	}))
 
-	// 16 MiB in-memory before spilling to /tmp
-	r.MaxMultipartMemory = 16 << 20 // 16 MiB
+	// 16 MiB in‐memory before spilling to /tmp
+	r.MaxMultipartMemory = 16 << 20
 
 	// Shared stats endpoints (all roles)
 	stats := r.Group("/stats")
@@ -36,9 +36,20 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		})
 	}
 
-	// Institution‐representative only
+	// Institution‐representative only (allowing both "institution_representative" AND "representative")
 	inst := r.Group("/")
-	inst.Use(mw.JWTAuthMiddleware(), RoleCheck("institution_representative"))
+	inst.Use(
+		mw.JWTAuthMiddleware(),
+		func(c *gin.Context) {
+			role := c.GetString("role")
+			if role != "institution_representative" && role != "representative" {
+				c.JSON(403, gin.H{"error": "forbidden"})
+				c.Abort()
+				return
+			}
+			c.Next()
+		},
+	)
 	{
 		inst.POST("/registration", func(c *gin.Context) {
 			handlers.HandleInstitutionRegistered(c, ch)
@@ -101,16 +112,4 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	}
 
 	return r
-}
-
-// RoleCheck ensures the JWT role claim matches
-func RoleCheck(role string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if c.GetString("role") != role {
-			c.JSON(403, gin.H{"error": "forbidden"})
-			c.Abort()
-			return
-		}
-		c.Next()
-	}
 }
