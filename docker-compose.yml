@@ -191,7 +191,9 @@ services:
       - MONGO_AUTH=admin
     ports:
       - "27017:27017"
-    #volumes:
+    volumes:
+      - initial_grades_db_data:/data/db
+      - ./initial_grades/init.js:/docker-entrypoint-initdb.d/init.js
     networks:
         - clearSky-net
   
@@ -237,7 +239,9 @@ services:
       - MONGO_AUTH=admin
     ports:
       - "27018:27017"
-    #volumes:
+    volumes:
+      - final_grades_db_data:/data/db
+      - ./final_grades/init.js:/docker-entrypoint-initdb.d/init.js
     networks:
         - clearSky-net
   
@@ -274,7 +278,9 @@ services:
       - MYSQL_PASSWORD=password
     ports:
       - "3306:3306"
-    #volumes:
+    volumes:
+      - stats_db_data:/var/lib/mysql
+      - ./stats_service/db/init.sql:/docker-entrypoint-initdb.d/init.sql  # Optional
     networks:
       - clearSky-net
 
@@ -295,10 +301,6 @@ services:
       - RABBITMQ_ROUTING_KEY=postgrades.statistics
       - RABBITMQ_GET_GRADES_KEY=stats.get
       - RABBITMQ_SEND_AVAIL_KEY=stats.avail
-     # - MYSQL_ROOT_PASSWORD=root
-     # - MYSQL_DATABASE=statsdb
-     # - MYSQL_USER=user
-     # - MYSQL_PASSWORD=password
     networks:
       - clearSky-net
     
@@ -315,7 +317,10 @@ services:
       - MYSQL_PASSWORD=password
     ports:
       - "3307:3306"
-    #volumes:
+    volumes:
+      - view_db_data:/var/lib/mysql
+      - ./View_personal_grades/db/init.sql:/docker-entrypoint-initdb.d/init.sql  
+
     networks:
       - clearSky-net
 
@@ -336,18 +341,8 @@ services:
       - RABBITMQ_EXCHANGE=clearSky.events
       - RABBITMQ_ROUTING_KEY=postgrades.view
       - RABBITMQ_GET_GRADES_KEY=view.avail
-#      - MYSQL_ROOT_PASSWORD=root
-#      - MYSQL_DATABASE=viewgradesdb
-#      - MYSQL_USER=user
-#      - MYSQL_PASSWORD=password
     networks:
       - clearSky-net
-
-
-
-
-
-
 
 networks:
   clearSky-net:
@@ -357,3 +352,8 @@ volumes:
   student_db_data:
   instructor_db_data:
   credits_pgdata:
+  initial_grades_db_data:
+  final_grades_db_data:
+  stats_db_data:
+  view_db_data:
+
