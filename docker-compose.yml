@@ -138,10 +138,12 @@ services:
       - "3000:3000"
     depends_on:
       - orchestrator
+  
     environment:
       - GO_API_URL=http://orchestrator:8080
     networks:
       - clearSky-net
+    
 
   # USER MANAGEMENT SERVICE
   user_management_service:

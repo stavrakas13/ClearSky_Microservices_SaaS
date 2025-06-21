@@ -2,7 +2,7 @@
 import { flash } from '../../script.js';
 import { postReviewRequest } from '../../api/student.js';
 
-const form = document.querySelector('form[action="/api/appeals"]');
+const form = document.querySelector('form[action="/appeals"]');
 
 form.addEventListener('submit', async e => {
   e.preventDefault();

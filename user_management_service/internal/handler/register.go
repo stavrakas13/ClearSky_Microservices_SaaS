@@ -12,7 +12,8 @@ import (
 
 // Struct για το request σώμα
 type RegisterRequest struct {
-	Email    string `json:"email" binding:"required,email"`
+	Email    string `json:"email" binding:"omitempty,email"`
+	Username string `json:"username" binding:"omitempty"`
 	Password string `json:"password" binding:"required,min=6"`
 	Role     string `json:"role" binding:"required,oneof=student instructor institution_representative"`
 }
@@ -26,10 +27,14 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Έλεγχος αν το email υπάρχει ήδη
+		// Έλεγχος αν το email ή το username υπάρχει ήδη
 		var existingUser model.User
-		if err := db.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
+		if req.Email != "" && db.Where("email = ?", req.Email).First(&existingUser).Error == nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Email already registered"})
+			return
+		}
+		if req.Username != "" && db.Where("username = ?", req.Username).First(&existingUser).Error == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Username already registered"})
 			return
 		}
 
@@ -44,6 +49,7 @@ func Register(db *gorm.DB) gin.HandlerFunc {
 		user := model.User{
 			ID:           uuid.New().String(),
 			Email:        req.Email,
+			Username:     req.Username,
 			PasswordHash: string(hashedPassword),
 			Role:         req.Role,
 		}

@@ -1,8 +1,8 @@
 // public/js/instructor/post-initial.js
 import { flash } from '../script.js';
 
-const form = document.querySelector('form[action="/api/grades/upload"]') ||
-             document.querySelector('form[action="/api/grades/upload"]');
+const form = document.querySelector('form[action="/grades/upload"]') ||
+             document.querySelector('form[action="/grades/upload"]');
 form.addEventListener('submit', async e => {
   e.preventDefault();
   const fileInput = form.querySelector('input[type=file]');

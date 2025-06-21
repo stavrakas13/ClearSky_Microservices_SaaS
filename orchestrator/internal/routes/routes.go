@@ -1,10 +1,9 @@
+// file: orchestrator/internal/routes/router.go
 package routes
 
 import (
 	"orchestrator/internal/handlers"
 	mw "orchestrator/internal/middleware"
-
-	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -14,16 +13,13 @@ import (
 func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	r := gin.Default()
 
+	// DEVELOPMENT CORS: allow all origins and methods, handle preflight automatically
 	r.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:3000",
-			"http://localhost:5173",
-			"https://frontend.example.com",
-		},
-		AllowMethods:     []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		AllowCredentials: true, // if you rely on cookies or auth headers
-		MaxAge:           12 * time.Hour,
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
 	}))
 
 	// 16 MiB in-memory before spilling to /tmp
@@ -31,18 +27,14 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 
 	// Shared stats endpoints (all roles)
 	stats := r.Group("/stats")
-	// stats.Use(mw.JWTAuthMiddleware())
-	// {
-	stats.GET("/available", func(c *gin.Context) {
-		handlers.HandleSubmissionLogs(c, ch)
-	})
-	stats.GET("/courses", func(c *gin.Context) {
-		handlers.HandleSubmissionLogs(c, ch)
-	})
-	// stats.GET("/distributions", func(c *gin.Context) {
-	// 	handlers.HandleGetDistributions(c, ch)
-	// })
-	// }
+	{
+		stats.GET("/available", func(c *gin.Context) {
+			handlers.HandleSubmissionLogs(c, ch)
+		})
+		stats.GET("/courses", func(c *gin.Context) {
+			handlers.HandleSubmissionLogs(c, ch)
+		})
+	}
 
 	// Institution‐representative only
 	inst := r.Group("/")
@@ -62,38 +54,35 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	// Instructor only
 	instr := r.Group("/")
 	// instr.Use(mw.JWTAuthMiddleware(), RoleCheck("instructor"))
-	// {
-	instr.POST("/upload_init", func(c *gin.Context) {
-		handlers.UploadExcelInit(c, ch)
-	})
-	instr.PATCH("/postFinalGrades", func(c *gin.Context) {
-		handlers.UploadExcelFinal(c, ch)
-	})
-	instr.PATCH("/instructor/review-list", func(c *gin.Context) {
-		handlers.HandleGetRequestList(c, ch)
-	})
-	instr.PATCH("/instructor/reply", func(c *gin.Context) {
-		handlers.HandlePostResponse(c, ch)
-	})
-	// }
+	{
+		instr.POST("/upload_init", func(c *gin.Context) {
+			handlers.UploadExcelInit(c, ch)
+		})
+		instr.PATCH("/postFinalGrades", func(c *gin.Context) {
+			handlers.UploadExcelFinal(c, ch)
+		})
+		instr.PATCH("/instructor/review-list", func(c *gin.Context) {
+			handlers.HandleGetRequestList(c, ch)
+		})
+		instr.PATCH("/instructor/reply", func(c *gin.Context) {
+			handlers.HandlePostResponse(c, ch)
+		})
+	}
 
 	// Student only
 	std := r.Group("/")
 	// std.Use(mw.JWTAuthMiddleware(), RoleCheck("student"))
-	// {
-	// std.POST("/personal/courses", func(c *gin.Context) {
-	// 	handlers.HandleGetStudentCourses(c, ch)
-	// })
-	std.GET("/personal/grades", func(c *gin.Context) {
-		handlers.HandleGetPersonalGrades(c, ch)
-	})
-	std.PATCH("/student/reviewRequest", func(c *gin.Context) {
-		handlers.HandlePostNewRequest(c, ch)
-	})
-	std.PATCH("/student/status", func(c *gin.Context) {
-		handlers.HandleGetRequestStatus(c, ch)
-	})
-	// }
+	{
+		std.GET("/personal/grades", func(c *gin.Context) {
+			handlers.HandleGetPersonalGrades(c, ch)
+		})
+		std.PATCH("/student/reviewRequest", func(c *gin.Context) {
+			handlers.HandlePostNewRequest(c, ch)
+		})
+		std.PATCH("/student/status", func(c *gin.Context) {
+			handlers.HandleGetRequestStatus(c, ch)
+		})
+	}
 
 	// Public User‐management (no JWT)
 	{
