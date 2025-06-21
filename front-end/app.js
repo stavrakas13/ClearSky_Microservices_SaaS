@@ -7,7 +7,7 @@ import morgan            from 'morgan';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app       = express();
-const API_BASE = process.env.ORCHESTRATOR_URL || 'http://orchestrator:8080';
+const API_BASE  = process.env.ORCHESTRATOR_URL || 'http://orchestrator:8080';
 
 /*───────────────────────────
   1) 3rd-party middleware
@@ -20,8 +20,7 @@ app.use(morgan('dev'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 /*───────────────────────────
-  3) Body-parsers  (moved ↑)
-     – form POSTs need req.body
+  3) Body-parsers
 ───────────────────────────*/
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
@@ -96,7 +95,7 @@ app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
     // Call orchestrator → user-management service
-    const response = await fetch('${API_BASE}/user/login', {
+    const response = await fetch(`${API_BASE}/user/login`, {   // ← fixed line
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body   : JSON.stringify({ username, password })
@@ -128,6 +127,7 @@ app.post('/login', async (req, res) => {
     });
   }
 });
+
 app.post('/api/session', (req, res) => {
   const { username, role } = req.body;
   if (!username || !role) {
@@ -136,6 +136,7 @@ app.post('/api/session', (req, res) => {
   req.session.user = { username, role };
   res.sendStatus(200);
 });
+
 app.get('/logout', (req, res) =>
   req.session.destroy(() => res.redirect('/login'))
 );
