@@ -1,9 +1,11 @@
-// public/js/instructor/post-final.js
+// public/js/institution/post-final.js
 import { flash } from '../script.js';
 
-const form = document.querySelector('form[action="/grades/upload-final"]');
+const form = document.querySelector('#upload-final-form');
+
 form.addEventListener('submit', async e => {
   e.preventDefault();
+
   const fileInput = form.querySelector('input[type=file]');
   if (!fileInput.files.length) return flash('Please select an XLSX file.');
 
@@ -11,12 +13,13 @@ form.addEventListener('submit', async e => {
   fd.append('xlsx', fileInput.files[0]);
 
   try {
-    const res = await fetch('/upload_init', { // same endpoint as initial
+    // Proxy to orchestrator
+    const res = await fetch(`${window.API_BASE}/upload_final`, {
       method: 'POST',
-      body: fd,
+      body:   fd,
     });
     const body = await res.json();
-    if (!res.ok) throw new Error(body.message || res.statusText);
+    if (!res.ok) throw new Error(body.error || body.message || res.statusText);
 
     flash('Final grades uploaded!');
   } catch (err) {

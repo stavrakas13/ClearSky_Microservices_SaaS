@@ -1,3 +1,4 @@
+<!-- views/partials/navbar.ejs -->
 <nav class="navbar">
   <div class="navbar__brand">
     <a href="/" class="navbar__logo">clearSKY</a>
@@ -13,21 +14,28 @@
         </a>
       </li>
     </ul>
+
   <% } else { %>
-    <!-- Authenticated nav, role-aware -->
+    <!-- Authenticated nav – role-aware -->
     <ul class="navbar__links">
       <% if (user.role === 'student') { %>
-        <%- include('./nav-student',   { currentUrl }) %>
+        <%- include('./nav-student', { currentUrl }) %>
+
       <% } else if (user.role === 'instructor') { %>
-        <%- include('./nav-instructor',{ currentUrl }) %>
-      <% } else if (user.role === 'institution') { %>
-        <%- include('./nav-institution',{ currentUrl }) %>
+        <%- include('./nav-instructor', { currentUrl }) %>
+
+      <% } else if (['institution',
+                     'institution_representative',
+                     'representative'].includes(user.role)) { %>
+        <%- include('./nav-institution', { currentUrl }) %>
+
+      <% } else { %>
+        <li><a href="/">Home</a></li>
       <% } %>
     </ul>
 
     <div class="navbar__auth">
       <span class="navbar__user">Hi, <%= user.username %></span>
-      <!-- changed to a button-like link with id -->
       <a href="/login" id="logout-button" class="button button--secondary">
         Log out
       </a>

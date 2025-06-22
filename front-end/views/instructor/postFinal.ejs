@@ -10,11 +10,23 @@
     <h2>Instructor: <%= user.username %></h2>
 
     <fieldset><legend>FINAL GRADES POSTING</legend>
-      <form id="upload-final-form" enctype="multipart/form-data">
+      <!-- ⚠️ Added method & enctype so the file is sent -->
+      <form
+        id="upload-final-form"
+        action="/instructor/postFinalGrades"
+        method="POST"
+        enctype="multipart/form-data"
+      >
         <div class="form-group">
           <label for="xlsx-final">XLSX file with FINAL grades</label>
-          <input id="xlsx-final" type="file" name="xlsx" accept=".xlsx"
-                 style="width:100%;margin:0.4rem 0;"/>
+          <input
+            id="xlsx-final"
+            type="file"
+            name="file"
+            accept=".xlsx"
+            style="width:100%;margin:0.4rem 0;"
+            required
+          />
         </div>
         <button class="button" type="submit">Submit Final Grades</button>
       </form>
@@ -31,6 +43,7 @@
     <%- include('../partials/messageBox') %>
   </main>
 
+  <!-- ⚠️ Fixed path: your public/js/institution/post-final.js needs to be imported via its module path -->
   <script type="module" src="/js/institution/post-final.js"></script>
 </body>
 </html>

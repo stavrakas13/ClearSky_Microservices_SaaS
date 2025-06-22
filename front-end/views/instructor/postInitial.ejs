@@ -10,16 +10,29 @@
     <h2>Instructor: <%= user.username %></h2>
 
     <fieldset><legend>INITIAL GRADES POSTING</legend>
-      <form id="upload-init-form" enctype="multipart/form-data">
+      <!-- Added action, method, enctype -->
+      <form
+        id="upload-init-form"
+        action="/upload_init"
+        method="POST"
+        enctype="multipart/form-data"
+      >
         <div class="form-group">
           <label for="xlsx-init">XLSX file with initial grades</label>
-          <input id="xlsx-init" type="file" name="xlsx" accept=".xlsx"
-                 style="width:100%;margin:0.4rem 0;"/>
+          <input
+            id="xlsx-init"
+            type="file"
+            name="file"
+            accept=".xlsx"
+            style="width:100%;margin:0.4rem 0;"
+            required
+          />
         </div>
         <button class="button" type="submit">Submit Initial Grades</button>
       </form>
     </fieldset>
 
+    <!-- preview section unchanged -->
     <fieldset><legend>XLSX file parsing (preview)</legend>
       <div class="form-group"><label>Course:</label><input readonly value="" /></div>
       <div class="form-group"><label>Period:</label><input readonly value="" /></div>
@@ -31,6 +44,7 @@
     <%- include('../partials/messageBox') %>
   </main>
 
+  <!-- no change here: correct path to your module -->
   <script type="module" src="/js/institution/post-initial.js"></script>
 </body>
 </html>
