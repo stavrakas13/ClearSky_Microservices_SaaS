@@ -35,7 +35,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 
 		// Αποθήκευση πληροφοριών στο context
 		c.Set("user_id", claims.UserID)
-		c.Set("email", claims.Email)
+		c.Set("username", claims.Username)
 		c.Set("role", claims.Role)
 
 		c.Next()

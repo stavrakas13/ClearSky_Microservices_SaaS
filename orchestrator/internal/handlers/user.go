@@ -61,10 +61,9 @@ func rpcRequest(ch *amqp.Channel, exchange, routingKey string, reqBody interface
 // User Registration
 func HandleUserRegister(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
-		Email    string `json:"email"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Role     string `json:"role"` // add this field
+		Username string `json:"username,omitempty"`
+		Password string `json:"password,omitempty"`
+		Role     string `json:"role,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -72,12 +71,11 @@ func HandleUserRegister(c *gin.Context, ch *amqp.Channel) {
 	}
 	payload := map[string]interface{}{
 		"type":     "register",
-		"email":    req.Email,
 		"username": req.Username,
 		"password": req.Password,
-		"role":     req.Role, // add this line
+		"role":     req.Role,
 	}
-	resp, err := rpcRequest(ch, "orchestrator.commands", "auth.register", payload)
+	resp, err := rpcRequest(ch, "", "auth.request", payload)
 	if err != nil {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
@@ -88,7 +86,6 @@ func HandleUserRegister(c *gin.Context, ch *amqp.Channel) {
 // User Login
 func HandleUserLogin(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
-		Email    string `json:"email"`
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
@@ -98,11 +95,10 @@ func HandleUserLogin(c *gin.Context, ch *amqp.Channel) {
 	}
 	payload := map[string]interface{}{
 		"type":     "login",
-		"email":    req.Email,
 		"username": req.Username,
 		"password": req.Password,
 	}
-	resp, err := rpcRequest(ch, "orchestrator.commands", "auth.login", payload)
+	resp, err := rpcRequest(ch, "", "auth.request", payload)
 	if err != nil {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
@@ -117,17 +113,17 @@ func HandleUserLogin(c *gin.Context, ch *amqp.Channel) {
 // User Delete (example, adjust as needed)
 func HandleUserDelete(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
-		Email string `json:"email"`
+		Username string `json:"username"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 	payload := map[string]interface{}{
-		"type":  "delete",
-		"email": req.Email,
+		"type":     "delete",
+		"username": req.Username,
 	}
-	resp, err := rpcRequest(ch, "orchestrator.commands", "auth.delete", payload)
+	resp, err := rpcRequest(ch, "", "auth.request", payload)
 	if err != nil {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
@@ -148,7 +144,7 @@ func HandleUserGoogleLogin(c *gin.Context, ch *amqp.Channel) {
 		"type":  "google_login",
 		"token": req.Token,
 	}
-	resp, err := rpcRequest(ch, "orchestrator.commands", "auth.login.google", payload)
+	resp, err := rpcRequest(ch, "", "auth.request", payload)
 	if err != nil {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
@@ -159,7 +155,7 @@ func HandleUserGoogleLogin(c *gin.Context, ch *amqp.Channel) {
 // Change user password via RPC
 func HandleUserChangePassword(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
-		Email       string `json:"email" binding:"required"`
+		Username    string `json:"username" binding:"required"`
 		OldPassword string `json:"old_password" binding:"required"`
 		NewPassword string `json:"new_password" binding:"required"`
 	}
@@ -170,12 +166,12 @@ func HandleUserChangePassword(c *gin.Context, ch *amqp.Channel) {
 
 	payload := map[string]interface{}{
 		"type":         "change_password",
-		"email":        req.Email,
+		"username":     req.Username,
 		"old_password": req.OldPassword,
 		"new_password": req.NewPassword,
 	}
 	log.Printf("[HandleUserLogin] → publishing RPC payload: %+v\n", payload)
-	resp, err := rpcRequest(ch, "orchestrator.commands", "auth.change_password", payload)
+	resp, err := rpcRequest(ch, "", "auth.request", payload)
 	if err != nil {
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
