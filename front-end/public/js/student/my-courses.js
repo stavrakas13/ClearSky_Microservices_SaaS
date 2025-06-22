@@ -1,11 +1,10 @@
-// public/js/student/my-courses.js
+// front-end/public/js/student/my-courses.js
 import { flash } from '../../script.js';
 import { getStudentCourses } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    // New API now returns the array directly
-    const courses = await getStudentCourses();
+    const courses = await getStudentCourses();     // API now returns the array directly
 
     const tbody = document.querySelector('table tbody');
     tbody.innerHTML = courses
@@ -15,9 +14,9 @@ window.addEventListener('DOMContentLoaded', async () => {
           <td>${c.exam_period}</td>
           <td>${c.status}</td>
           <td>
-            <a href="/student/personal?course=${c.id}" class="button">View grades</a>
-            <a href="/student/request?course=${c.id}" class="button${c.status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
-            <a href="/student/status?course=${c.id}"  class="button${c.status === 'open' ? ' button--secondary' : ''}">Status</a>
+            <a href="/student/personal?course=${c.id}&period=${encodeURIComponent(c.exam_period)}" class="button">View grades</a>
+            <a href="/student/request?course=${c.id}&period=${encodeURIComponent(c.exam_period)}"  class="button${c.status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
+            <a href="/student/status?course=${c.id}&period=${encodeURIComponent(c.exam_period)}"   class="button${c.status === 'open' ? ' button--secondary' : ''}">Status</a>
           </td>
         </tr>
       `)

@@ -293,6 +293,11 @@ services:
       - ./stats_service/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - clearSky-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uuser", "-ppassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   stats_service:
     build:
@@ -300,8 +305,10 @@ services:
       dockerfile: Dockerfile
     restart: always
     depends_on:
-      - rabbitmq
-      - stats_db
+      stats_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
       - DATABASE_URL=mysql://user:password@stats_db:3306/stats
@@ -329,10 +336,14 @@ services:
       - "3307:3306"
     volumes:
       - view_db_data:/var/lib/mysql
-      - ./View_personal_grades/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql  
-
+      - ./View_personal_grades/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - clearSky-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uuser", "-ppassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   view_grades_service:
     build:
@@ -340,11 +351,12 @@ services:
       dockerfile: Dockerfile
     restart: always
     depends_on:
-      - rabbitmq
-      - view_grades_db
+      view_grades_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       - RABBITMQ_URI=amqp://rabbitmq:5672
-
       - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
       - DATABASE_URL=mysql://user:password@view_grades_db:3306/view_grades
       - MYSQL_URI=mysql://user:password@view_grades_db:3306/view_grades

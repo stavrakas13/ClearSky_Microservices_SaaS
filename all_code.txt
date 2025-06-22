@@ -328,22 +328,31 @@ export const postInstructorReply = ({
   });
 
 ===== front-end/public/api/personal.js =====
-// personal.js
+// front-end/public/api/personal.js
 import { request } from './_request.js';
 
 /**
  * Fetch all courses & periods for the logged-in student.
- * (orchestrator: GET /stats/available → returns all submission logs)
+ * (orchestrator: GET /stats/available → returns every submission log)
  */
 export const getStudentCourses = () =>
   request('/stats/available');
 
 /**
- * Fetch personal grades for a given course & exam period.
- * (orchestrator: GET /personal/grades?course_id=…&exam_period=…)
+ * Fetch personal grades for a given course and (optionally) exam period.
+ * If exam_period is omitted the backend will return the most recent one.
+ *
+ * @param {{ course_id: string|number, exam_period?: string }} params
  */
-export const getPersonalGrades = ({ course_id, exam_period }) =>
-  request(`/personal/grades?course_id=${encodeURIComponent(course_id)}&exam_period=${encodeURIComponent(exam_period)}`);
+export const getPersonalGrades = ({ course_id, exam_period }) => {
+  const qs = new URLSearchParams();
+  if (course_id !== undefined && course_id !== null) qs.append('course_id', course_id);
+  if (exam_period !== undefined && exam_period !== null) qs.append('exam_period', exam_period);
+
+  // empty query-string → “/personal/grades”
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request(`/personal/grades${suffix}`);
+};
 
 ===== front-end/public/api/_request.js =====
 // front-end/public/api/_request.js
@@ -837,14 +846,13 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 ===== front-end/public/js/student/my-courses.js =====
-// public/js/student/my-courses.js
+// front-end/public/js/student/my-courses.js
 import { flash } from '../../script.js';
 import { getStudentCourses } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    // New API now returns the array directly
-    const courses = await getStudentCourses();
+    const courses = await getStudentCourses();     // API now returns the array directly
 
     const tbody = document.querySelector('table tbody');
     tbody.innerHTML = courses
@@ -854,9 +862,9 @@ window.addEventListener('DOMContentLoaded', async () => {
           <td>${c.exam_period}</td>
           <td>${c.status}</td>
           <td>
-            <a href="/student/personal?course=${c.id}" class="button">View grades</a>
-            <a href="/student/request?course=${c.id}" class="button${c.status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
-            <a href="/student/status?course=${c.id}"  class="button${c.status === 'open' ? ' button--secondary' : ''}">Status</a>
+            <a href="/student/personal?course=${c.id}&period=${encodeURIComponent(c.exam_period)}" class="button">View grades</a>
+            <a href="/student/request?course=${c.id}&period=${encodeURIComponent(c.exam_period)}"  class="button${c.status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
+            <a href="/student/status?course=${c.id}&period=${encodeURIComponent(c.exam_period)}"   class="button${c.status === 'open' ? ' button--secondary' : ''}">Status</a>
           </td>
         </tr>
       `)
@@ -867,17 +875,24 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 ===== front-end/public/js/student/personal.js =====
-// public/js/student/personal.js
+// front-end/public/js/student/personal.js
 import { flash } from '../../script.js';
 import { getPersonalGrades } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
-  const params    = new URLSearchParams(location.search);
-  const course_id = params.get('course');
+  const params      = new URLSearchParams(location.search);
+  const course_id   = params.get('course');
+  const exam_period = params.get('period');       // may be null
+
+  // Visiting /student/personal directly?  Send them back to the course list.
+  if (!course_id) {
+    flash('Please pick a course first');
+    window.location.href = '/student/my-courses';
+    return;
+  }
 
   try {
-    // endpoint no longer needs exam_period
-    const grades = await getPersonalGrades({ course_id });
+    const grades = await getPersonalGrades({ course_id, exam_period });
 
     const tbody = document.querySelector('table tbody');
     tbody.innerHTML = Object.entries(grades)
@@ -893,40 +908,57 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 ===== front-end/public/js/student/review-request.js =====
-// student/review-request.js
+// front-end/public/js/student/review-request.js
 import { flash } from '../../script.js';
 import { postReviewRequest } from '../../api/student.js';
 
-const form = document.querySelector('form[action="/appeals"]');
+const form = document.querySelector('#student-review-request-form');
+if (!form) {
+  console.error('Student review request form (#student-review-request-form) not found!');
+} else {
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
 
-form.addEventListener('submit', async e => {
-  e.preventDefault();
-  const params          = new URLSearchParams(location.search);
-  const course_id       = params.get('course');
-  const exam_period     = 'spring 2025'; // or dynamic
-  const student_message = form.message.value.trim();
+    const params          = new URLSearchParams(location.search);
+    const course_id       = params.get('course');
+    const exam_period     = params.get('period') || undefined;   // allow backend to choose
+    const student_message = form.message.value.trim();
 
-  try {
-    await postReviewRequest({ course_id, exam_period, student_message });
-    flash('Review request submitted!');
-  } catch (err) {
-    flash(err.message);
-  }
-});
+    if (!course_id) {
+      flash('Please pick a course first');
+      window.location.href = '/student/my-courses';
+      return;
+    }
+
+    try {
+      await postReviewRequest({ course_id, exam_period, student_message });
+      flash('Review request submitted!');
+    } catch (err) {
+      flash(err.message);
+    }
+  });
+}
 
 ===== front-end/public/js/student/review-status.js =====
-// student/review-status.js
+// front-end/public/js/student/review-status.js
 import { flash } from '../../script.js';
 import { getReviewStatus } from '../../api/student.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   const params      = new URLSearchParams(location.search);
   const course_id   = params.get('course');
-  const exam_period = 'spring 2025'; // or dynamic
+  const exam_period = params.get('period');   // optional
+
+  if (!course_id) {
+    flash('Please pick a course first');
+    window.location.href = '/student/my-courses';
+    return;
+  }
 
   try {
     const { data } = await getReviewStatus({ course_id, exam_period });
-    document.querySelector('textarea[readonly]').textContent = data.instructor_message || 'No response yet.';
+    document.querySelector('textarea[readonly]').textContent =
+      data.instructor_message || 'No response yet.';
   } catch (err) {
     flash(err.message);
   }
