@@ -30,7 +30,7 @@ func main() {
 	r := gin.Default()
 	r.POST("/register", handler.Register(db))
 	r.POST("/login", handler.Login(db))
-	r.POST("/upsert", handler.UpsertUser(db)) // ← add this line
+	r.POST("/upsert", handler.UpsertUser(db))
 
 	auth := r.Group("/auth")
 	auth.Use(middleware.JWTAuthMiddleware()) // sets user_id, email, role in context

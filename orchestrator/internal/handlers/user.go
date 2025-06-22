@@ -61,13 +61,17 @@ func rpcRequest(ch *amqp.Channel, exchange, routingKey string, reqBody interface
 // User Registration
 func HandleUserRegister(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
-		Username string `json:"username,omitempty"`
-		Password string `json:"password,omitempty"`
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required"`
 		Role     string `json:"role,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username and password are required"})
 		return
+	}
+	// default to "student" if no role provided
+	if req.Role == "" {
+		req.Role = "student"
 	}
 	payload := map[string]interface{}{
 		"type":     "register",
