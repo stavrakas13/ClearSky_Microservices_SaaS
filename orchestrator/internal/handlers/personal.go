@@ -21,7 +21,7 @@ import (
 // When upload grades, update view grades too.
 
 func ForwardToView(ch *amqp.Channel, fileData []byte, filename string) {
-	log.Println("[ForwardToStatistics] Encoding data for statistics")
+	log.Println("[ForwardToStatistics] Encoding data for VIEWING THEM")
 
 	// Base64 encode the file contents
 	encoded := base64.StdEncoding.EncodeToString(fileData)
@@ -35,7 +35,7 @@ func ForwardToView(ch *amqp.Channel, fileData []byte, filename string) {
 		Body:         []byte(encoded),
 	}
 
-	log.Println("[ForwardToStatistics] Publishing to postgrades.statistics")
+	log.Println("[ForwardToVIEW] Publishing to postgrades.VIEW")
 
 	// Publish to exchange with the durable routing key
 	err := ch.Publish(
@@ -47,9 +47,9 @@ func ForwardToView(ch *amqp.Channel, fileData []byte, filename string) {
 	)
 
 	if err != nil {
-		log.Printf("[ForwardToStatistics] Failed to publish statistics message: %v\n", err)
+		log.Printf("[ForwardToVIEW] Failed to publish VIEW message: %v\n", err)
 	} else {
-		log.Println("[ForwardToStatistics] Statistics message published successfully")
+		log.Println("[ForwardToVIEW] VIEW message published successfully")
 	}
 }
 
@@ -68,7 +68,7 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 
 	// Build request with student_id from JWT
 	req := struct {
-		StudentID string `json:"student_id"`
+		StudentID string `json:"AM"`
 	}{
 		StudentID: studentID,
 	}
