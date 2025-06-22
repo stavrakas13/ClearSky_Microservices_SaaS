@@ -11,18 +11,19 @@ var jwtKey = []byte(os.Getenv("JWT_SECRET")) // Μπορείς να το φορ�
 
 type Claims struct {
 	UserID    string `json:"user_id"`
-	Email     string `json:"email"`
+	Username  string `json:"username"`
 	Role      string `json:"role"`
 	StudentID string `json:"student_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(userID, email, role, studentID string) (string, error) {
+// GenerateToken issues a JWT with username instead of email
+func GenerateToken(userID, username, role, studentID string) (string, error) {
 	expirationTime := time.Now().Add(24 * time.Hour)
 
 	claims := &Claims{
 		UserID:    userID,
-		Email:     email,
+		Username:  username,
 		Role:      role,
 		StudentID: studentID,
 		RegisteredClaims: jwt.RegisteredClaims{

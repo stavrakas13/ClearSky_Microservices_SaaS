@@ -31,6 +31,13 @@ func SetupMessaging(ch *amqp.Channel) error {
 	); err != nil {
 		return fmt.Errorf("ExchangeDeclare failed: %w", err)
 	}
+	// Declare RPC commands exchange
+	if err := ch.ExchangeDeclare(
+		"orchestrator.commands", "topic",
+		true, false, false, false, nil,
+	); err != nil {
+		return fmt.Errorf("Commands ExchangeDeclare failed: %w", err)
+	}
 	// Declare queue with DLX settings
 	qArgs := amqp.Table{
 		"x-dead-letter-exchange":    config.Cfg.Exchange.Name,

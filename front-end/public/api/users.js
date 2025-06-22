@@ -5,10 +5,10 @@ import { request } from './_request.js';
  * Register a new user by username/password/role only.
  * @param {{ username: string, password: string, role: string }} payload
  */
-export const registerUser = ({ username, password, role }) =>
+export const registerUser = ({ id, password, role }) =>
   request('/user/register', {
     method: 'POST',
-    body: { username, password, role }
+    body: { username: id, password, role }
   }).then(response => {
     if (response.error) throw new Error(response.error);
     return response;

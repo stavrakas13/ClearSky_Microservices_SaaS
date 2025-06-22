@@ -18,7 +18,6 @@ func Profile(db *gorm.DB) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"user_id":    u.ID,
-			"email":      u.Email,
 			"role":       u.Role,
 			"student_id": u.StudentID,
 		})

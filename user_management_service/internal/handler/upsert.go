@@ -11,7 +11,7 @@ import (
 )
 
 type UpsertRequest struct {
-	Email     string `json:"email" binding:"required,email"`
+	Username  string `json:"username" binding:"required"`
 	Role      string `json:"role" binding:"required,oneof=student instructor institution_representative"`
 	StudentID string `json:"student_id,omitempty"`
 }
@@ -25,11 +25,11 @@ func UpsertUser(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var u model.User
-		if err := db.Where("email = ?", req.Email).First(&u).Error; err != nil {
+		if err := db.Where("username = ?", req.Username).First(&u).Error; err != nil {
 			// create new
 			u = model.User{
 				ID:        uuid.NewString(),
-				Email:     req.Email,
+				Username:  req.Username,
 				Role:      req.Role,
 				StudentID: req.StudentID,
 			}

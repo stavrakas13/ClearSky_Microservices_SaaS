@@ -15,11 +15,12 @@ import (
 )
 
 type AuthRequest struct {
-	Type     string `json:"type"` // "register" ή "login"
-	Email    string `json:"email,omitempty"`
-	Username string `json:"username,omitempty"`
-	Password string `json:"password"`
-	Role     string `json:"role,omitempty"`
+	Type        string `json:"type"` // "register" ή "login"
+	Username    string `json:"username,omitempty"`
+	Password    string `json:"password,omitempty"`
+	Role        string `json:"role,omitempty"`
+	OldPassword string `json:"old_password,omitempty"`
+	NewPassword string `json:"new_password,omitempty"`
 }
 
 type AuthResponse struct {
@@ -49,10 +50,12 @@ func ConsumeAuthQueue(db *gorm.DB) {
 			var resp AuthResponse
 			// register
 			if req.Type == "register" {
+				if req.Username == "" {
+					resp = AuthResponse{Status: "error", Message: "Username required"}
+					goto send
+				}
 				var existing model.User
-				if req.Email != "" && db.Where("email = ?", req.Email).First(&existing).Error == nil {
-					resp = AuthResponse{Status: "error", Message: "Email already registered"}
-				} else if req.Username != "" && db.Where("username = ?", req.Username).First(&existing).Error == nil {
+				if err := db.Where("username = ?", req.Username).First(&existing).Error; err == nil {
 					resp = AuthResponse{Status: "error", Message: "Username already registered"}
 				} else {
 					role := req.Role
@@ -60,7 +63,7 @@ func ConsumeAuthQueue(db *gorm.DB) {
 						role = "student"
 					}
 					hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-					user := model.User{ID: uuid.NewString(), Email: req.Email, Username: req.Username, PasswordHash: string(hash), Role: role}
+					user := model.User{ID: uuid.NewString(), Username: req.Username, PasswordHash: string(hash), Role: role}
 					if err := db.Create(&user).Error; err != nil {
 						resp = AuthResponse{Status: "error", Message: "Failed to create user"}
 					} else {
@@ -69,36 +72,46 @@ func ConsumeAuthQueue(db *gorm.DB) {
 				}
 				// login
 			} else if req.Type == "login" {
-				log.Println("[AuthConsumer] Received login request for:", req.Email, req.Username)
+				log.Println("[AuthConsumer] Received login request for username:", req.Username)
 				var user model.User
-				if req.Email != "" {
-					if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
-						resp = AuthResponse{Status: "error", Message: "Invalid credentials"}
-						goto send
-					}
-				} else if req.Username != "" {
+				if req.Username != "" {
 					if err := db.Where("username = ?", req.Username).First(&user).Error; err != nil {
 						resp = AuthResponse{Status: "error", Message: "Invalid credentials"}
 						goto send
 					}
 				} else {
-					resp = AuthResponse{Status: "error", Message: "Email or username required"}
+					resp = AuthResponse{Status: "error", Message: "Username required"}
 					goto send
 				}
 				if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 					resp = AuthResponse{Status: "error", Message: "Invalid credentials"}
 				} else {
-					token, err := jwt.GenerateToken(user.ID, user.Email, user.Role, user.StudentID)
+					token, err := jwt.GenerateToken(user.ID, user.Username, user.Role, user.StudentID)
 					if err != nil {
 						resp = AuthResponse{Status: "error", Message: "Token generation failed"}
 					} else {
 						resp = AuthResponse{Status: "ok", Token: token, Role: user.Role, UserID: user.ID}
 					}
 				}
+				// change_password
+			} else if req.Type == "change_password" {
+				var user model.User
+				if err := db.Where("username = ?", req.Username).First(&user).Error; err != nil {
+					resp = AuthResponse{Status: "error", Message: "Invalid credentials"}
+				} else if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)) != nil {
+					resp = AuthResponse{Status: "error", Message: "Invalid credentials"}
+				} else {
+					newHash, _ := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+					if err := db.Model(&user).Update("password_hash", string(newHash)).Error; err != nil {
+						resp = AuthResponse{Status: "error", Message: "Failed to update password"}
+					} else {
+						resp = AuthResponse{Status: "ok"}
+					}
+				}
 			} else {
 				resp = AuthResponse{Status: "error", Message: "Unknown request type"}
 			}
-			send:
+		send:
 			// send RPC reply
 			body, _ := json.Marshal(resp)
 			if d.ReplyTo != "" {

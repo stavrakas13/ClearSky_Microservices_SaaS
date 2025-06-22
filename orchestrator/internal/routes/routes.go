@@ -109,6 +109,9 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		r.POST("/user/google-login", func(c *gin.Context) {
 			handlers.HandleUserGoogleLogin(c, ch)
 		})
+		r.PATCH("/user/change-password", func(c *gin.Context) {
+			handlers.HandleUserChangePassword(c, ch)
+		})
 	}
 
 	return r
