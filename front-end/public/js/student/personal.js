@@ -1,18 +1,17 @@
-// student/personal.js
+// public/js/student/personal.js
 import { flash } from '../../script.js';
 import { getPersonalGrades } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
-  const params      = new URLSearchParams(location.search);
-  const course_id   = params.get('course');
-  const exam_period = 'spring 2025'; // or pull from query if dynamic
+  const params    = new URLSearchParams(location.search);
+  const course_id = params.get('course');
 
   try {
-    const { data } = await getPersonalGrades({ course_id, exam_period });
+    // endpoint no longer needs exam_period
+    const grades = await getPersonalGrades({ course_id });
 
     const tbody = document.querySelector('table tbody');
-    // data: { total, Q1, Q2, Q3, … }
-    tbody.innerHTML = Object.entries(data)
+    tbody.innerHTML = Object.entries(grades)
       .map(([component, score]) => `
         <tr>
           <td>${component}</td>

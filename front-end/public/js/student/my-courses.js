@@ -1,15 +1,14 @@
-// student/my-courses.js
+// public/js/student/my-courses.js
 import { flash } from '../../script.js';
 import { getStudentCourses } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    // now GET /stats/available
-    const { data } = await getStudentCourses();
+    // New API now returns the array directly
+    const courses = await getStudentCourses();
 
-    // Assuming data is an array of submissions: { course_name, exam_period, status, id }
     const tbody = document.querySelector('table tbody');
-    tbody.innerHTML = data
+    tbody.innerHTML = courses
       .map(c => `
         <tr ${c.status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
           <td>${c.course_name}</td>

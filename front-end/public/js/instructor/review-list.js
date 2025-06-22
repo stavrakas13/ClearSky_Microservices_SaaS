@@ -4,21 +4,19 @@ import { getPendingReviews } from '../../api/instructor.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    // Replace with the actual course & period you need:
     const payload = { course_id: 'software II', exam_period: 'spring 2025' };
-    const { data } = await getPendingReviews(payload);
+    // API now returns the array directly
+    const reviews = await getPendingReviews(payload);
 
     const tbody = document.querySelector('table tbody');
-    tbody.innerHTML = data
+    tbody.innerHTML = reviews
       .map(r => `
         <tr>
           <td>${r.course_name}</td>
           <td>${r.exam_period}</td>
           <td>${r.student}</td>
           <td>
-            <a class="button" href="/instructor/reply?req=${r.id}">
-              Reply
-            </a>
+            <a class="button" href="/instructor/reply?req=${r.id}">Reply</a>
           </td>
         </tr>
       `)

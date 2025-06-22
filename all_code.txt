@@ -439,6 +439,7 @@ export const googleLoginUser = token =>
   });
 
 ===== front-end/public/js/auth/login.js =====
+// public/js/auth/login.js
 import { flash } from '../../script.js';
 import { loginUser } from '../../api/users.js';
 
@@ -457,17 +458,11 @@ form.addEventListener('submit', async e => {
     : { username: input, password };
 
   try {
-    const { role } = await loginUser(payload);
+    // loginUser now returns { role, token }
+    const { role, token } = await loginUser(payload);
 
-    // Tell Express to set the session cookie
-    await fetch('/api/session', {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({
-        username: form.username.value.trim(),
-        role
-      })
-    });
+    // store the JWT so our API helpers will use it
+    localStorage.setItem('jwt', token);
 
     // Redirect based on role
     if (['institution_representative', 'representative'].includes(role)) {
@@ -484,8 +479,6 @@ form.addEventListener('submit', async e => {
     errorMsg.style.display = 'block';
   }
 });
-
-// The Google button is a simple link; no JS needed here.
 
 ===== front-end/public/js/auth/logout.js =====
 // front-end/public/js/auth/logout.js
@@ -528,60 +521,65 @@ form.addEventListener('submit', async e => {
 });
 
 ===== front-end/public/js/institution/post-final.js =====
-// public/js/instructor/post-final.js
-import { flash } from '../script.js';
+// front-end/public/js/institution/post-final.js
+//
+// Upload the FINAL grades spreadsheet (credits will be deducted)
+// ────────────────────────────────────────────────────────────────
+import { flash }    from '../../script.js';
+import { request }  from '../../api/_request.js';   // ✅ helper injects JWT
 
-const form = document.querySelector('form[action="/grades/upload-final"]');
-form.addEventListener('submit', async e => {
-  e.preventDefault();
-  const fileInput = form.querySelector('input[type=file]');
-  if (!fileInput.files.length) return flash('Please select an XLSX file.');
+const form = document.querySelector('#upload-final-form');
 
-  const fd = new FormData();
-  fd.append('xlsx', fileInput.files[0]);
-
-  try {
-    const res = await fetch('/upload_init', { // same endpoint as initial
-      method: 'POST',
-      body: fd,
-    });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.message || res.statusText);
-
-    flash('Final grades uploaded!');
-  } catch (err) {
-    flash(err.message);
-  }
-});
-
-===== front-end/public/js/institution/post-initial.js =====
-// public/js/institution/post-initial.js
-import { flash } from '../../script.js';  // two levels up from /js/institution/
-
-const form = document.querySelector('#upload-init-form');
-form.addEventListener('submit', async e => {
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const fileInput = form.querySelector('input[type=file]');
+  const fileInput = form.querySelector('input[type="file"]');
   if (!fileInput.files.length) {
     return flash('Please select an XLSX file.');
   }
 
   const fd = new FormData();
-  fd.append('file', fileInput.files[0]);  // matches `name="file"` on the form
+  fd.append('file', fileInput.files[0]);            // ↔ name="file" in the form
 
   try {
-    const res = await fetch('/upload_init', {
-      method: 'POST',
-      body: fd,
-    });
-    const body = await res.json();
-
-    if (!res.ok) throw new Error(body.error || body.message || res.statusText);
-
-    flash('Initial grades uploaded!');
+    // ────────────────────────────────────────────────────────────
+    // •  PATCH /postFinalGrades  (route guarded for instructors)
+    // •  request() adds  Authorization: Bearer <jwt>
+    // ────────────────────────────────────────────────────────────
+    await request('/postFinalGrades', { method: 'PATCH', body: fd });
+    flash('Final grades uploaded ✔');
   } catch (err) {
-    flash(err.message);
+    flash(err.message || 'Upload failed');
+  }
+});
+
+===== front-end/public/js/institution/post-initial.js =====
+// front-end/public/js/institution/post-initial.js
+//
+// Upload INITIAL grades (first declaration)
+// ─────────────────────────────────────────────────────────────
+import { flash }   from '../../script.js';
+import { request } from '../../api/_request.js';   // ← adds the JWT
+
+const form = document.querySelector('#upload-init-form');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const fileInput = form.querySelector('input[type="file"]');
+  if (!fileInput.files.length) {
+    return flash('Please select an XLSX file.');
+  }
+
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);           // name="file" matches Gin handler
+
+  try {
+    // The Orchestrator route is a **POST /upload_init** (instructor-only)
+    await request('/upload_init', { method: 'POST', body: fd });
+    flash('Initial grades uploaded ✔');
+  } catch (err) {
+    flash(err.message || 'Upload failed');
   }
 });
 
@@ -642,7 +640,7 @@ form.addEventListener('submit', async e => {
 });
 
 ===== front-end/public/js/institution/statistics.js =====
-// institution/statistics.js
+// public/js/institution/statistics.js
 import { flash } from '../../script.js';
 import { getDistributions } from '../../api/stats.js';
 
@@ -650,8 +648,8 @@ const btn = document.querySelector('button.button--secondary');
 
 btn.addEventListener('click', async () => {
   try {
-    const { data } = await getDistributions({ /* filters */ });
-    console.log('Distributions:', data);
+    const stats = await getDistributions({ /* filters */ });
+    console.log('Distributions:', stats);
     flash('Distributions fetched—check console.');
   } catch (err) {
     flash(err.message);
@@ -757,21 +755,19 @@ import { getPendingReviews } from '../../api/instructor.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    // Replace with the actual course & period you need:
     const payload = { course_id: 'software II', exam_period: 'spring 2025' };
-    const { data } = await getPendingReviews(payload);
+    // API now returns the array directly
+    const reviews = await getPendingReviews(payload);
 
     const tbody = document.querySelector('table tbody');
-    tbody.innerHTML = data
+    tbody.innerHTML = reviews
       .map(r => `
         <tr>
           <td>${r.course_name}</td>
           <td>${r.exam_period}</td>
           <td>${r.student}</td>
           <td>
-            <a class="button" href="/instructor/reply?req=${r.id}">
-              Reply
-            </a>
+            <a class="button" href="/instructor/reply?req=${r.id}">Reply</a>
           </td>
         </tr>
       `)
@@ -782,18 +778,17 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 ===== front-end/public/js/student/my-courses.js =====
-// student/my-courses.js
+// public/js/student/my-courses.js
 import { flash } from '../../script.js';
 import { getStudentCourses } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    // now GET /stats/available
-    const { data } = await getStudentCourses();
+    // New API now returns the array directly
+    const courses = await getStudentCourses();
 
-    // Assuming data is an array of submissions: { course_name, exam_period, status, id }
     const tbody = document.querySelector('table tbody');
-    tbody.innerHTML = data
+    tbody.innerHTML = courses
       .map(c => `
         <tr ${c.status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
           <td>${c.course_name}</td>
@@ -813,21 +808,20 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 ===== front-end/public/js/student/personal.js =====
-// student/personal.js
+// public/js/student/personal.js
 import { flash } from '../../script.js';
 import { getPersonalGrades } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
-  const params      = new URLSearchParams(location.search);
-  const course_id   = params.get('course');
-  const exam_period = 'spring 2025'; // or pull from query if dynamic
+  const params    = new URLSearchParams(location.search);
+  const course_id = params.get('course');
 
   try {
-    const { data } = await getPersonalGrades({ course_id, exam_period });
+    // endpoint no longer needs exam_period
+    const grades = await getPersonalGrades({ course_id });
 
     const tbody = document.querySelector('table tbody');
-    // data: { total, Q1, Q2, Q3, … }
-    tbody.innerHTML = Object.entries(data)
+    tbody.innerHTML = Object.entries(grades)
       .map(([component, score]) => `
         <tr>
           <td>${component}</td>
@@ -1299,11 +1293,12 @@ input, select, textarea {
     <h2>Instructor: <%= user.username %></h2>
 
     <fieldset><legend>FINAL GRADES POSTING</legend>
+      <!-- No action/method → handled by JS -->
       <form id="upload-final-form" enctype="multipart/form-data">
         <div class="form-group">
           <label for="xlsx-final">XLSX file with FINAL grades</label>
-          <input id="xlsx-final" type="file" name="xlsx" accept=".xlsx"
-                 style="width:100%;margin:0.4rem 0;"/>
+          <input id="xlsx-final" type="file" name="file"
+                 accept=".xlsx" style="width:100%;margin:0.4rem 0;" required />
         </div>
         <button class="button" type="submit">Submit Final Grades</button>
       </form>
@@ -1337,29 +1332,17 @@ input, select, textarea {
     <h2>Instructor: <%= user.username %></h2>
 
     <fieldset><legend>INITIAL GRADES POSTING</legend>
-      <!-- Added action, method, enctype -->
-      <form
-        id="upload-init-form"
-        action="/upload_init"
-        method="POST"
-        enctype="multipart/form-data"
-      >
+      <!-- No action/method → handled by JS -->
+      <form id="upload-init-form" enctype="multipart/form-data">
         <div class="form-group">
           <label for="xlsx-init">XLSX file with initial grades</label>
-          <input
-            id="xlsx-init"
-            type="file"
-            name="file"
-            accept=".xlsx"
-            style="width:100%;margin:0.4rem 0;"
-            required
-          />
+          <input id="xlsx-init" type="file" name="file"
+                 accept=".xlsx" style="width:100%;margin:0.4rem 0;" required />
         </div>
         <button class="button" type="submit">Submit Initial Grades</button>
       </form>
     </fieldset>
 
-    <!-- preview section unchanged -->
     <fieldset><legend>XLSX file parsing (preview)</legend>
       <div class="form-group"><label>Course:</label><input readonly value="" /></div>
       <div class="form-group"><label>Period:</label><input readonly value="" /></div>
@@ -1371,7 +1354,6 @@ input, select, textarea {
     <%- include('../partials/messageBox') %>
   </main>
 
-  <!-- no change here: correct path to your module -->
   <script type="module" src="/js/institution/post-initial.js"></script>
 </body>
 </html>
@@ -1529,7 +1511,6 @@ input, select, textarea {
   </main>
 </body>
 </html>
-
 ===== front-end/views/partials/head.ejs =====
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>

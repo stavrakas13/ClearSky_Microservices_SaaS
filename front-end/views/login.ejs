@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- meta + stylesheet + window.API_BASE -->
   <%- include('partials/head', { title: 'Log in' }) %>
 </head>
 <body>
+  <!-- top navigation bar (guest version) -->
   <%- include('partials/navbar') %>
 
   <main class="login-container">
     <fieldset>
       <legend>Welcome to clearSKY</legend>
 
-      <!-- classic form POST -->
+      <!-- CLASSIC form (the JS will intercept submit) -->
       <form id="login-form" action="/login" method="post">
         <div class="form-group">
           <label for="username">User name</label>
@@ -23,20 +25,29 @@
         </div>
 
         <button class="button" type="submit">Login</button>
+
+        <!-- space for client-side errors -->
+        <p id="error-msg" style="display:none;color:#c00;margin-top:1rem;"></p>
       </form>
 
-      <!-- space for server-side errors -->
+      <!-- space for *server-side* errors from Express -->
       <% if (error) { %>
         <p style="color:#c00;margin-top:1rem;"><%= error %></p>
       <% } %>
 
       <!-- GOOGLE LOGIN BUTTON -->
-      <a id="google-login-btn" class="button button--secondary"
+      <a id="google-login-btn"
+         class="button button--secondary"
          href="/auth/google/login"
          style="margin-top:0.75rem;display:inline-block;">
         Login with&nbsp;Google
       </a>
     </fieldset>
   </main>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       Place scripts LAST so the DOM is ready when they run
+       ────────────────────────────────────────────────────────────── -->
+  <script type="module" src="/js/auth/login.js"></script>
 </body>
 </html>
