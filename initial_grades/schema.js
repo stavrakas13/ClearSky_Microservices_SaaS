@@ -82,7 +82,7 @@ async function main() {
 
     // 4) Εμφάνιση λιστών για έλεγχο
     const cols = await db.listCollections().toArray();
-    console.log('Collections in final_grades:', cols.map(c=>c.name));
+    console.log('Collections in initial_grades:', cols.map(c=>c.name));
 
   } catch (err) {
     console.error('❌ Error in create_grading.js:', err);

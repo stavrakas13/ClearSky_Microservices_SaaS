@@ -1,8 +1,14 @@
 require('dotenv').config();
+
+require('./schema'); 
+
+
 const amqp           = require('amqplib');
 const mongoose       = require('mongoose');
 const { MongoClient } = require('mongodb');
 const XLSX           = require('xlsx');
+
+
 
 /* const {
   MONGO_URI,
@@ -98,6 +104,8 @@ if (missingVars.length > 0) {
       console.error('❌ Failed to send reply:', err.message);
     }
   };
+
+  
 
   // ─── Listener 1: Grades
   {

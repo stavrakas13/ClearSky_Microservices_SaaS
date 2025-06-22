@@ -184,18 +184,18 @@ services:
     container_name: initial_grades_db
     restart: always
     environment:
-      - MONGO_URI=mongodb://initial_grades_db:27017/ingradesdb
+      - MONGO_URI=mongodb://initial_grades_db:27017/init_grades
       - MONGO_USER=root
       - MONGO_PASS=2002
       - MONGO_HOST=localhost
       - MONGO_PORT=27017
-      - MONGO_DB=ingradesdb
+      - MONGO_DB=init_grades
       - MONGO_AUTH=admin
     ports:
       - "27017:27017"
     volumes:
       - initial_grades_db_data:/data/db
-      - ./initial_grades/init.js:/docker-entrypoint-initdb.d/init.js
+      #- ./initial_grades/init.js:/docker-entrypoint-initdb.d/init.js
     networks:
         - clearSky-net
   
@@ -209,17 +209,17 @@ services:
       - initial_grades_db
     environment:
       - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
-      - DATABASE_URL=mongodb://initial_grades_db:27017/ingradesdb
-      - MONGO_URI=mongodb://initial_grades_db:27017/ingradesdb
+      - DATABASE_URL=mongodb://initial_grades_db:27017/init_grades
+      - MONGO_URI=mongodb://initial_grades_db:27017/init_grades
       - RABBITMQ_URI=amqp://rabbitmq:5672
       - RABBITMQ_EXCHANGE=clearSky.events
       - RABBITMQ_ROUTING_KEY=postgrades.init
       - RABBITMQ_CREDIT_INCR_KEY=incr.credits
       - MONGO_USER=root
       - MONGO_PASS=2002
-      - MONGO_HOST=localhost
-      - MONGO_PORT=27017
-      - MONGO_DB=ingradesdb
+      #- MONGO_HOST=localhost
+      #- MONGO_PORT=27017
+      - MONGO_DB=init_grades
       - MONGO_AUTH=admin
     networks:
       - clearSky-net
@@ -232,20 +232,18 @@ services:
     restart: always
     environment:
       - NODE_ENV=production
-      - MONGO_URI=mongodb://final_grades_db:27017/finalgradesdb     
+      - MONGO_URI=mongodb://final_grades_db:27017/final_grades     
       - MONGO_USER=root
       - MONGO_PASS=2002
       - MONGO_HOST=localhost
       - MONGO_PORT=27017
-      - MONGO_DB=finalgradesdb
+      - MONGO_DB=final_grades
       - MONGO_AUTH=admin
     ports:
       - "27018:27017"
     volumes:
-      # named volume for the datafiles (persists /data/db)
       - final_grades_db_data:/data/db
-      # mount your init scripts (will only run on an empty /data/db)
-      - ./final_grades/mongodb:/docker-entrypoint-initdb.d:ro
+      #- ./final_grades/mongodb:/docker-entrypoint-initdb.d:ro
     networks:
       - clearSky-net
 
@@ -259,7 +257,7 @@ services:
       - final_grades_db
     environment:
       - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
-      - DATABASE_URL=mongodb://final_grades_db:27017/finalgradesdb
+      - DATABASE_URL=mongodb://final_grades_db:27017/final_grades
       - NODE_ENV=production
       - MONGO_URI=mongodb://final_grades_db:27017/final_grades
       - RABBITMQ_URI=amqp://rabbitmq:5672
@@ -284,7 +282,7 @@ services:
       - "3306:3306"
     volumes:
       - stats_db_data:/var/lib/mysql
-      - ./stats_service/db/init.sql:/docker-entrypoint-initdb.d/init.sql  # Optional
+      - ./stats_service/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - clearSky-net
 
@@ -323,7 +321,7 @@ services:
       - "3307:3306"
     volumes:
       - view_db_data:/var/lib/mysql
-      - ./View_personal_grades/db/init.sql:/docker-entrypoint-initdb.d/init.sql  
+      - ./View_personal_grades/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql  
 
     networks:
       - clearSky-net

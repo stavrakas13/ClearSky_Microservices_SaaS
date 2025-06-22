@@ -1,4 +1,11 @@
 require('dotenv').config();
+
+require('./mongodb/schema'); 
+require('./mongodb/init'); 
+require('./mongodb/create'); 
+
+
+
 const amqp           = require('amqplib');
 const mongoose       = require('mongoose');
 const { MongoClient } = require('mongodb');
