@@ -3,10 +3,10 @@ import { request } from './_request.js';
 
 /**
  * Fetch all courses & periods for the logged-in student.
- * (orchestrator: GET /stats/available → returns every submission log)
+ * (orchestrator: GET /personal/grades → returns every submission log)
  */
 export const getStudentCourses = () =>
-  request('/stats/available');
+  request('/personal/grades');
 
 /**
  * Fetch personal grades for a given course and (optionally) exam period.
