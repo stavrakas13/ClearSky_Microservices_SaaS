@@ -2,7 +2,7 @@
 
 // NOTE: in your browser, "orchestrator" isn't a DNS name.
 // Use localhost:8080 (or adjust if you run the orchestrator elsewhere).
-const BASE = window.API_BASE || '';
+const API_BASE = 'http://localhost:8080';
 
 /**
  * Read the JWT from localStorage (or cookie fallback).
@@ -36,7 +36,7 @@ export async function request(path, { method = 'GET', body, headers } = {}) {
     opts.headers = { 'Content-Type': 'application/json', ...opts.headers };
   }
 
-  const res = await fetch(BASE + path, opts);
+  const res = await fetch(`${API_BASE}${path}`, opts);
   const json = await res.json().catch(() => ({}));
 
   if (!res.ok) {
