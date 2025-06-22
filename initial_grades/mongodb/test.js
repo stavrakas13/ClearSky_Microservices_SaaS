@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 const {
-  MONGODB_URI = 'mongodb://localhost:27017/grades'
+  MONGODB_URI = 'mongodb://localhost:27017/init_grades'
 } = process.env;
 
 // re-use your Grade schema definition
