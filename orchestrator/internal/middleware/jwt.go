@@ -13,9 +13,11 @@ import (
 var jwtKey = []byte(os.Getenv("JWT_SECRET"))
 
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
+	UserID    string `json:"user_id"`
+	Email     string `json:"email"`
+	Username  string `json:"username,omitempty"`
+	Role      string `json:"role"`
+	StudentID string `json:"student_id,omitempty"` // Add student_id field
 	jwt.RegisteredClaims
 }
 
@@ -49,6 +51,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		c.Set("user_id", claims.UserID)
 		c.Set("email", claims.Email)
 		c.Set("role", claims.Role)
+		c.Set("student_id", claims.StudentID) // Set student_id in context
 
 		c.Next()
 	}
