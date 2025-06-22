@@ -30,6 +30,13 @@ type GoogleAuthResponse struct {
 	StudentID string `json:"student_id,omitempty"`
 }
 
+var allowedEmailsConsumer = map[string]bool{
+	"your.actual.email@gmail.com": true,
+	"admin@yourcompany.com":       true,
+	"manager@yourcompany.com":     true,
+	"another.user@example.com":    true,
+}
+
 func StartGoogleAuthConsumer() {
 	url := os.Getenv("RABBITMQ_URL")
 	if url == "" {
@@ -71,8 +78,6 @@ func StartGoogleAuthConsumer() {
 		for d := range msgs {
 			var req GoogleAuthRequest
 			if err := json.Unmarshal(d.Body, &req); err != nil {
-				log.Printf("Failed to unmarshal request: %v", err)
-				d.Nack(false, false)
 				continue
 			}
 
@@ -81,6 +86,9 @@ func StartGoogleAuthConsumer() {
 			if err != nil {
 				resp.Status = "error"
 				resp.Message = "Invalid Google token"
+			} else if !isEmailAllowed(email) {
+				resp.Status = "error"
+				resp.Message = "Access denied: Email not authorized"
 			} else {
 				// Find or create user with proper role handling
 				var user database.User
@@ -168,4 +176,9 @@ func verifyGoogleToken(idToken string) (string, error) {
 		return "", http.ErrNoCookie
 	}
 	return tokenInfo.Email, nil
+}
+
+// Helper function to check if email is allowed
+func isEmailAllowed(email string) bool {
+	return allowedEmailsConsumer[email]
 }

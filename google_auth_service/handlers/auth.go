@@ -19,6 +19,13 @@ import (
 
 var (
 	oauthConfig *oauth2.Config
+	// Define specific allowed emails only - replace with your actual emails
+	allowedEmails = map[string]bool{
+		"your.actual.email@gmail.com": true,
+		"admin@yourcompany.com":       true,
+		"manager@yourcompany.com":     true,
+		"another.user@example.com":    true,
+	}
 )
 
 func init() {
@@ -56,6 +63,11 @@ func GoogleLoginHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
+// Helper function to check if email is allowed - simplified to use only hardcoded emails
+func isEmailAllowed(email string) bool {
+	return allowedEmails[email]
+}
+
 // Handles Google's callback and fetches user info
 func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
@@ -86,13 +98,20 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	email := userInfo["email"].(string)
+
+	// Validate email is allowed
+	if !isEmailAllowed(email) {
+		http.Error(w, "Access denied: Your email domain is not authorized for this application", http.StatusForbidden)
+		return
+	}
+
 	// derive role from state - default to institution_representative for Google users
 	role := normalizeRole(r.URL.Query().Get("state"))
 	if r.URL.Query().Get("state") == "" {
 		role = "institution_representative"
 	}
 
-	email := userInfo["email"].(string)
 	name := userInfo["name"].(string)
 	picture := userInfo["picture"].(string)
 
@@ -163,41 +182,40 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		"role":       user.Role,
 		"student_id": user.StudentID,
 	}
+
 	buf, _ := json.Marshal(upsertPayload)
 	http.Post(umsHost+"/upsert", "application/json", bytes.NewBuffer(buf))
 
 	// Redirect to frontend based on user role
+	var redirectPath string
+	switch user.Role {
+	case "student":
+		redirectPath = "/student"
+	case "instructor":
+		redirectPath = "/instructor"
+	case "institution_representative":
+		redirectPath = "/institution"
+	default:
+		redirectPath = "/"
+	}
+
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:3000"
 	}
 
-	var redirectPath string
-	switch user.Role {
-	case "institution_representative":
-		redirectPath = "/institution"
-	case "instructor":
-		redirectPath = "/instructor"
-	case "student":
-		redirectPath = "/student"
-	default:
-		redirectPath = "/"
-	}
-
-	// Redirect to frontend with role-specific path
-	http.Redirect(w, r, frontendURL+redirectPath+"?google_login=success", http.StatusTemporaryRedirect)
+	http.Redirect(w, r, frontendURL+redirectPath, http.StatusSeeOther)
 }
 
 // LogoutHandler διαγράφει το token cookie
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
-	// Για να διαγράψουμε cookie, το κάνουμε expired
 	cookie := http.Cookie{
 		Name:     "token",
 		Value:    "",
 		Path:     "/",
-		MaxAge:   -1, // Λέει στο browser να διαγράψει το cookie αμέσως
+		MaxAge:   -1, // Expire immediately
 		HttpOnly: true,
-		Secure:   false, // Σε HTTPS το κάνεις true
+		Secure:   false, // Set to true in production with HTTPS
 		SameSite: http.SameSiteLaxMode,
 	}
 
