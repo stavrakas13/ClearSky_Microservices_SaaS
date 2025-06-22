@@ -23,7 +23,7 @@ func main() {
 
 	loginReq := map[string]string{
 		"type":     "register",
-		"email":    "student2@example.com",
+		"username": "student2@example.com",
 		"password": "mypassword123",
 		"role":     "student",
 	}

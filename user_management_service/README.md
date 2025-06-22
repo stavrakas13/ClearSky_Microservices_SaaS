@@ -33,7 +33,7 @@ This microservice handles user authentication and authorization for the clearSKY
 ```json
 {
   "type": "login",
-  "email": "student@example.com",
+  "username": "student@example.com",
   "password": "mypassword123"
 }
 ```
