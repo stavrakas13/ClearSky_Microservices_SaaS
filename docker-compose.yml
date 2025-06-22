@@ -131,6 +131,28 @@ services:
     networks:
       - clearSky-net
 
+  # GOOGLE AUTH SERVICE
+  google_auth_service:
+    build:
+      context: ./google_auth_service
+      dockerfile: Dockerfile
+    container_name: google_auth_service_app
+    restart: always
+    ports:
+      - "8086:8086"
+    depends_on:
+      - rabbitmq
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URL=http://localhost:8086/auth/google/callback
+      - JWT_SECRET=${JWT_SECRET:-default-secret-key}
+      - UMS_URL=http://user_management_service:8082
+      - FRONTEND_URL=http://localhost:3000
+    networks:
+      - clearSky-net
+
   # FRONT END
   frontend:
     build: ./front-end
@@ -138,9 +160,11 @@ services:
       - "3000:3000"
     depends_on:
       - orchestrator
-  
+      - google_auth_service
     environment:
       - GO_API_URL=http://orchestrator:8080
+      - GOOGLE_AUTH_URL=http://google_auth_service:8086
+      - GOOGLE_AUTH_EXTERNAL_URL=http://localhost:8086
     networks:
       - clearSky-net
     
@@ -161,22 +185,6 @@ services:
     networks:
       - clearSky-net
 
-  # GOOGLE AUTH SERVICE
-  google_auth_service:
-    build:
-      context: ./google_auth_service
-      dockerfile: Dockerfile
-    container_name: google_auth_service_app
-    restart: always
-    ports:
-      - "8086:8086"
-    depends_on:
-      - rabbitmq
-    environment:
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-    networks:
-      - clearSky-net
-    
   # INITIAL GRADES SERVICE
 
   initial_grades_db:

@@ -31,13 +31,13 @@ func init() {
 	}
 }
 
-// helper to validate role
+// helper to validate role - default Google users to representative
 func normalizeRole(r string) string {
 	switch r {
 	case "student", "instructor", "institution_representative":
 		return r
 	default:
-		return "student"
+		return "institution_representative" // Changed from "student" to "institution_representative"
 	}
 }
 
@@ -86,8 +86,12 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// derive role from state
+	// derive role from state - default to institution_representative for Google users
 	role := normalizeRole(r.URL.Query().Get("state"))
+	if r.URL.Query().Get("state") == "" {
+		role = "institution_representative"
+	}
+
 	email := userInfo["email"].(string)
 	name := userInfo["name"].(string)
 	picture := userInfo["picture"].(string)
@@ -98,18 +102,14 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	var studentID string
 	if result.Error != nil {
-		// Create new user
-		if role == "student" {
-			studentID = generateStudentID()
-		}
-
+		// Create new user - no student_id for representatives
 		user = database.User{
 			Email:     email,
 			Name:      name,
 			Picture:   picture,
 			Provider:  "google",
 			Role:      role,
-			StudentID: studentID,
+			StudentID: studentID, // Will be empty for representatives
 		}
 		database.DB.Create(&user)
 	} else {
@@ -118,18 +118,21 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		user.Picture = picture
 		if user.Role != role {
 			user.Role = role
-			// If changing to student and no student_id, generate one
+			// Only generate student_id if role is student
 			if role == "student" && user.StudentID == "" {
 				user.StudentID = generateStudentID()
 			}
 		}
 		database.DB.Save(&user)
-		studentID = user.StudentID
+		// Only use student_id if user is a student
+		if user.Role == "student" {
+			studentID = user.StudentID
+		}
 	}
 
-	// Generate JWT with student_id
+	// Generate JWT with student_id only for students
 	userIDStr := strconv.Itoa(int(user.ID))
-	jwtToken, err := utils.GenerateJWT(userIDStr, email, user.Role, user.StudentID)
+	jwtToken, err := utils.GenerateJWT(userIDStr, email, user.Role, studentID)
 	if err != nil {
 		http.Error(w, "Failed to generate JWT: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -139,17 +142,13 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Name:     "token",
 		Value:    jwtToken,
 		Path:     "/",
-		HttpOnly: true,  // Δεν μπορεί να το διαβάσει το JavaScript (ασφάλεια!)
-		Secure:   false, // Αν τρέχαμε HTTPS μόνο, θα έπρεπε να είναι true
+		HttpOnly: true,
+		Secure:   false, // Set to true in production with HTTPS
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400, // 1 μέρα ισχύ
+		MaxAge:   86400, // 1 day
 	}
 
 	http.SetCookie(w, &cookie)
-
-	// Απλό redirect σε frontend ή απλή επιβεβαίωση
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprint(w, "<h1>Login successful! Το token έχει αποθηκευτεί στο cookie.</h1>")
 
 	rabbitmq.PublishLoginEvent(email)
 
@@ -160,12 +159,33 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	upsertPayload := map[string]interface{}{
-		"email":      email,
+		"username":   email, // Use email as username for Google users
 		"role":       user.Role,
 		"student_id": user.StudentID,
 	}
 	buf, _ := json.Marshal(upsertPayload)
 	http.Post(umsHost+"/upsert", "application/json", bytes.NewBuffer(buf))
+
+	// Redirect to frontend based on user role
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000"
+	}
+
+	var redirectPath string
+	switch user.Role {
+	case "institution_representative":
+		redirectPath = "/institution"
+	case "instructor":
+		redirectPath = "/instructor"
+	case "student":
+		redirectPath = "/student"
+	default:
+		redirectPath = "/"
+	}
+
+	// Redirect to frontend with role-specific path
+	http.Redirect(w, r, frontendURL+redirectPath+"?google_login=success", http.StatusTemporaryRedirect)
 }
 
 // LogoutHandler διαγράφει το token cookie

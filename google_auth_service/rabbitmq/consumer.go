@@ -44,17 +44,25 @@ func StartGoogleAuthConsumer() {
 		log.Fatal("RabbitMQ channel failed:", err)
 	}
 
+	// Declare exchange
+	err = ch.ExchangeDeclare("clearSky.events", "direct", true, false, false, false, nil)
+	if err != nil {
+		log.Fatal("Exchange declare failed:", err)
+	}
+
 	queue := "google_auth.request"
 	_, err = ch.QueueDeclare(queue, true, false, false, false, nil)
 	if err != nil {
 		log.Fatal("Queue declare failed:", err)
 	}
-	err = ch.QueueBind(queue, "auth.login.google", "orchestrator.commands", false, nil)
+
+	// Bind to the correct routing key
+	err = ch.QueueBind(queue, "auth.login.google", "clearSky.events", false, nil)
 	if err != nil {
 		log.Fatal("Queue bind failed:", err)
 	}
 
-	msgs, err := ch.Consume(queue, "", true, false, false, false, nil)
+	msgs, err := ch.Consume(queue, "", false, false, false, false, nil)
 	if err != nil {
 		log.Fatal("Consume failed:", err)
 	}
@@ -63,6 +71,8 @@ func StartGoogleAuthConsumer() {
 		for d := range msgs {
 			var req GoogleAuthRequest
 			if err := json.Unmarshal(d.Body, &req); err != nil {
+				log.Printf("Failed to unmarshal request: %v", err)
+				d.Nack(false, false)
 				continue
 			}
 
@@ -72,18 +82,18 @@ func StartGoogleAuthConsumer() {
 				resp.Status = "error"
 				resp.Message = "Invalid Google token"
 			} else {
-				// Find or create user with proper student_id handling
+				// Find or create user with proper role handling
 				var user database.User
 				result := database.DB.First(&user, "email = ?", email)
 
 				role := req.Role
 				if role == "" {
-					role = "student"
+					role = "institution_representative" // Default for Google users
 				}
 
 				var studentID string
 				if result.Error != nil {
-					// Create new user
+					// Create new user - only assign student_id if role is student
 					if role == "student" {
 						studentID = generateStudentID()
 					}
@@ -95,11 +105,14 @@ func StartGoogleAuthConsumer() {
 					}
 					database.DB.Create(&user)
 				} else {
-					studentID = user.StudentID
-					if role == "student" && studentID == "" {
-						studentID = generateStudentID()
-						user.StudentID = studentID
-						database.DB.Save(&user)
+					// Only use student_id for students
+					if user.Role == "student" {
+						studentID = user.StudentID
+						if studentID == "" && role == "student" {
+							studentID = generateStudentID()
+							user.StudentID = studentID
+							database.DB.Save(&user)
+						}
 					}
 				}
 
@@ -123,6 +136,7 @@ func StartGoogleAuthConsumer() {
 					},
 				)
 			}
+			d.Ack(false)
 		}
 	}()
 }

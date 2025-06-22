@@ -1,6 +1,7 @@
 // front-end/app.js
 import express           from 'express';
 import session           from 'express-session';
+import cookieParser      from 'cookie-parser'; // Add cookie parser import
 import path              from 'path';
 import { fileURLToPath } from 'url';
 import morgan            from 'morgan';
@@ -18,12 +19,13 @@ const API_BASE        =
 
 const GOOGLE_AUTH_URL =
   process.env.GOOGLE_AUTH_URL ||
-  'http://localhost:8086';    // your google_auth_service
+  'http://google_auth_service:8086';    // Use Docker service name
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1)  3rd-party middleware
 // ─────────────────────────────────────────────────────────────────────────────
 app.use(morgan('dev'));
+app.use(cookieParser()); // Add cookie parser middleware
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2)  Static assets
@@ -62,13 +64,48 @@ app.set('views', path.join(__dirname, 'views'));
 //    Forward front-end `/auth/google/...` to your google_auth_service.
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/auth/google/login', (req, res) => {
-  const role = req.query.role || 'student';
-  res.redirect(`${GOOGLE_AUTH_URL}/auth/google/login?role=${role}`);
+  const role = req.query.role || 'institution_representative';
+  // For Docker, we need to redirect to the external URL
+  const externalGoogleAuthUrl = process.env.GOOGLE_AUTH_EXTERNAL_URL || 'http://localhost:8086';
+  res.redirect(`${externalGoogleAuthUrl}/auth/google/login?role=${role}`);
 });
 
+// Handle successful Google login callback
 app.get('/auth/google/callback', (req, res) => {
-  // After Google sets the cookie, redirect back to home (or wherever you like)
-  res.redirect('/');
+  // This route is called when Google Auth Service redirects back
+  // The JWT should already be in a cookie set by Google Auth Service
+  
+  // Check if we have a JWT cookie
+  const token = req.cookies.token;
+  if (token) {
+    // Set session based on the JWT token
+    // For now, we'll default to institution_representative for Google users
+    req.session.user = {
+      username: 'google_user',
+      role: 'institution_representative'
+    };
+    res.redirect('/institution?google_login=success');
+  } else {
+    res.redirect('/login?error=google_login_failed');
+  }
+});
+
+// Add middleware to check for Google login and set session
+app.use((req, res, next) => {
+  // Check for JWT cookie and google_login parameter
+  if (req.query.google_login === 'success' && req.cookies && req.cookies.token && !req.session.user) {
+    // This is a Google login callback, validate the JWT and set session
+    try {
+      // For now, we'll trust the cookie and set default Google user session
+      req.session.user = {
+        username: 'google_user',
+        role: 'institution_representative'
+      };
+    } catch (error) {
+      console.error('Error processing Google login:', error);
+    }
+  }
+  next();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,3 +240,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
   console.log(`✔ Front-end listening at http://localhost:${PORT}`)
 );
+

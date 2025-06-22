@@ -5,6 +5,7 @@ Collecting frontend code...
 // front-end/app.js
 import express           from 'express';
 import session           from 'express-session';
+import cookieParser      from 'cookie-parser'; // Add cookie parser import
 import path              from 'path';
 import { fileURLToPath } from 'url';
 import morgan            from 'morgan';
@@ -22,12 +23,13 @@ const API_BASE        =
 
 const GOOGLE_AUTH_URL =
   process.env.GOOGLE_AUTH_URL ||
-  'http://localhost:8086';    // your google_auth_service
+  'http://google_auth_service:8086';    // Use Docker service name
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1)  3rd-party middleware
 // ─────────────────────────────────────────────────────────────────────────────
 app.use(morgan('dev'));
+app.use(cookieParser()); // Add cookie parser middleware
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2)  Static assets
@@ -66,13 +68,48 @@ app.set('views', path.join(__dirname, 'views'));
 //    Forward front-end `/auth/google/...` to your google_auth_service.
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/auth/google/login', (req, res) => {
-  const role = req.query.role || 'student';
-  res.redirect(`${GOOGLE_AUTH_URL}/auth/google/login?role=${role}`);
+  const role = req.query.role || 'institution_representative';
+  // For Docker, we need to redirect to the external URL
+  const externalGoogleAuthUrl = process.env.GOOGLE_AUTH_EXTERNAL_URL || 'http://localhost:8086';
+  res.redirect(`${externalGoogleAuthUrl}/auth/google/login?role=${role}`);
 });
 
+// Handle successful Google login callback
 app.get('/auth/google/callback', (req, res) => {
-  // After Google sets the cookie, redirect back to home (or wherever you like)
-  res.redirect('/');
+  // This route is called when Google Auth Service redirects back
+  // The JWT should already be in a cookie set by Google Auth Service
+  
+  // Check if we have a JWT cookie
+  const token = req.cookies.token;
+  if (token) {
+    // Set session based on the JWT token
+    // For now, we'll default to institution_representative for Google users
+    req.session.user = {
+      username: 'google_user',
+      role: 'institution_representative'
+    };
+    res.redirect('/institution?google_login=success');
+  } else {
+    res.redirect('/login?error=google_login_failed');
+  }
+});
+
+// Add middleware to check for Google login and set session
+app.use((req, res, next) => {
+  // Check for JWT cookie and google_login parameter
+  if (req.query.google_login === 'success' && req.cookies && req.cookies.token && !req.session.user) {
+    // This is a Google login callback, validate the JWT and set session
+    try {
+      // For now, we'll trust the cookie and set default Google user session
+      req.session.user = {
+        username: 'google_user',
+        role: 'institution_representative'
+      };
+    } catch (error) {
+      console.error('Error processing Google login:', error);
+    }
+  }
+  next();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -207,6 +244,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
   console.log(`✔ Front-end listening at http://localhost:${PORT}`)
 );
+
 
 ===== front-end/public/api/credits.js =====
 // credits.js
@@ -431,15 +469,19 @@ export const changePassword = ({ username, old_password, new_password }) =>
 /**
  * Login via Google token.
  * @param {string} token  Google ID token
+ * @param {string} role   User role (optional)
  */
-export const googleLoginUser = token =>
+export const googleLoginUser = (token, role = 'institution_representative') =>
   request('/user/google-login', {
     method: 'POST',
-    body  : { token }
+    body  : { token, role }
+  }).then(response => {
+    if (response.token) localStorage.setItem('jwt', response.token);
+    return response;
   });
 
 ===== front-end/public/js/auth/login.js =====
-// public/js/auth/login.js
+// front-end/public/js/auth/login.js
 import { flash } from '../../script.js';
 import { loginUser } from '../../api/users.js';
 
@@ -450,6 +492,9 @@ form.addEventListener('submit', async e => {
   e.preventDefault();
   errorMsg.style.display = 'none';
 
+  // ──────────────────────────────────────────────────────────────
+  // 1) Build payload (username or e-mail)
+  // ──────────────────────────────────────────────────────────────
   const input    = form.username.value.trim();
   const password = form.password.value;
   const isEmail  = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input);
@@ -458,13 +503,27 @@ form.addEventListener('submit', async e => {
     : { username: input, password };
 
   try {
-    // loginUser now returns { role, token }
+    // ────────────────────────────────────────────────────────────
+    // 2) Ask orchestrator to log us in → { role, token }
+    // ────────────────────────────────────────────────────────────
     const { role, token } = await loginUser(payload);
 
-    // store the JWT so our API helpers will use it
+    // 3) Persist JWT so every future fetch() carries Authorization: Bearer …
     localStorage.setItem('jwt', token);
 
-    // Redirect based on role
+    // 4) Tell the Express layer to remember who we are (for EJS templates)
+    await fetch('/api/session', {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({
+        username: input,
+        role
+      })
+    });
+
+    // ────────────────────────────────────────────────────────────
+    // 5) Redirect according to role
+    // ────────────────────────────────────────────────────────────
     if (['institution_representative', 'representative'].includes(role)) {
       window.location.href = '/institution';
     } else if (role === 'instructor') {
@@ -717,7 +776,7 @@ changeForm.addEventListener('submit', async e => {
 
 ===== front-end/public/js/instructor/reply.js =====
 // public/js/instructor/reply.js
-import { flash } from '../script.js';
+import { flash } from '../../script.js';
 import { postInstructorReply } from '../../api/instructor.js';
 
 const form = document.querySelector('#instructor-reply-form');
@@ -750,7 +809,7 @@ form.addEventListener('submit', async e => {
 
 ===== front-end/public/js/instructor/review-list.js =====
 // public/js/instructor/review-list.js
-import { flash } from '../script.js';
+import { flash } from '../../script.js';
 import { getPendingReviews } from '../../api/instructor.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1472,16 +1531,18 @@ input, select, textarea {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- meta + stylesheet + window.API_BASE -->
   <%- include('partials/head', { title: 'Log in' }) %>
 </head>
 <body>
+  <!-- top navigation bar (guest version) -->
   <%- include('partials/navbar') %>
 
   <main class="login-container">
     <fieldset>
       <legend>Welcome to clearSKY</legend>
 
-      <!-- classic form POST -->
+      <!-- CLASSIC form (the JS will intercept submit) -->
       <form id="login-form" action="/login" method="post">
         <div class="form-group">
           <label for="username">User name</label>
@@ -1494,23 +1555,32 @@ input, select, textarea {
         </div>
 
         <button class="button" type="submit">Login</button>
+
+        <!-- space for client-side errors -->
+        <p id="error-msg" style="display:none;color:#c00;margin-top:1rem;"></p>
       </form>
 
-      <!-- space for server-side errors -->
+      <!-- space for *server-side* errors from Express -->
       <% if (error) { %>
         <p style="color:#c00;margin-top:1rem;"><%= error %></p>
       <% } %>
 
       <!-- GOOGLE LOGIN BUTTON -->
       <a id="google-login-btn" class="button button--secondary"
-         href="/auth/google/login"
+         href="http://localhost:8086/auth/google/login"
          style="margin-top:0.75rem;display:inline-block;">
         Login with&nbsp;Google
       </a>
     </fieldset>
   </main>
+
+  <!-- ──────────────────────────────────────────────────────────────
+       Place scripts LAST so the DOM is ready when they run
+       ────────────────────────────────────────────────────────────── -->
+  <script type="module" src="/js/auth/login.js"></script>
 </body>
 </html>
+
 ===== front-end/views/partials/head.ejs =====
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
@@ -2568,7 +2638,7 @@ type User struct {
 	Name      string
 	Picture   string
 	Provider  string `gorm:"default:'google'"`
-	Role      string `gorm:"default:'student'"`
+	Role      string `gorm:"default:'institution_representative'"`
 	StudentID string `gorm:"unique"`
 }
 
@@ -2606,13 +2676,13 @@ func init() {
 	}
 }
 
-// helper to validate role
+// helper to validate role - default Google users to representative
 func normalizeRole(r string) string {
 	switch r {
 	case "student", "instructor", "institution_representative":
 		return r
 	default:
-		return "student"
+		return "institution_representative" // Changed from "student" to "institution_representative"
 	}
 }
 
@@ -2661,8 +2731,12 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// derive role from state
+	// derive role from state - default to institution_representative for Google users
 	role := normalizeRole(r.URL.Query().Get("state"))
+	if r.URL.Query().Get("state") == "" {
+		role = "institution_representative"
+	}
+
 	email := userInfo["email"].(string)
 	name := userInfo["name"].(string)
 	picture := userInfo["picture"].(string)
@@ -2673,18 +2747,14 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	var studentID string
 	if result.Error != nil {
-		// Create new user
-		if role == "student" {
-			studentID = generateStudentID()
-		}
-
+		// Create new user - no student_id for representatives
 		user = database.User{
 			Email:     email,
 			Name:      name,
 			Picture:   picture,
 			Provider:  "google",
 			Role:      role,
-			StudentID: studentID,
+			StudentID: studentID, // Will be empty for representatives
 		}
 		database.DB.Create(&user)
 	} else {
@@ -2693,18 +2763,21 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		user.Picture = picture
 		if user.Role != role {
 			user.Role = role
-			// If changing to student and no student_id, generate one
+			// Only generate student_id if role is student
 			if role == "student" && user.StudentID == "" {
 				user.StudentID = generateStudentID()
 			}
 		}
 		database.DB.Save(&user)
-		studentID = user.StudentID
+		// Only use student_id if user is a student
+		if user.Role == "student" {
+			studentID = user.StudentID
+		}
 	}
 
-	// Generate JWT with student_id
+	// Generate JWT with student_id only for students
 	userIDStr := strconv.Itoa(int(user.ID))
-	jwtToken, err := utils.GenerateJWT(userIDStr, email, user.Role, user.StudentID)
+	jwtToken, err := utils.GenerateJWT(userIDStr, email, user.Role, studentID)
 	if err != nil {
 		http.Error(w, "Failed to generate JWT: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -2714,17 +2787,13 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Name:     "token",
 		Value:    jwtToken,
 		Path:     "/",
-		HttpOnly: true,  // Δεν μπορεί να το διαβάσει το JavaScript (ασφάλεια!)
-		Secure:   false, // Αν τρέχαμε HTTPS μόνο, θα έπρεπε να είναι true
+		HttpOnly: true,
+		Secure:   false, // Set to true in production with HTTPS
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400, // 1 μέρα ισχύ
+		MaxAge:   86400, // 1 day
 	}
 
 	http.SetCookie(w, &cookie)
-
-	// Απλό redirect σε frontend ή απλή επιβεβαίωση
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprint(w, "<h1>Login successful! Το token έχει αποθηκευτεί στο cookie.</h1>")
 
 	rabbitmq.PublishLoginEvent(email)
 
@@ -2735,12 +2804,33 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	upsertPayload := map[string]interface{}{
-		"email":      email,
+		"username":   email, // Use email as username for Google users
 		"role":       user.Role,
 		"student_id": user.StudentID,
 	}
 	buf, _ := json.Marshal(upsertPayload)
 	http.Post(umsHost+"/upsert", "application/json", bytes.NewBuffer(buf))
+
+	// Redirect to frontend based on user role
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000"
+	}
+
+	var redirectPath string
+	switch user.Role {
+	case "institution_representative":
+		redirectPath = "/institution"
+	case "instructor":
+		redirectPath = "/instructor"
+	case "student":
+		redirectPath = "/student"
+	default:
+		redirectPath = "/"
+	}
+
+	// Redirect to frontend with role-specific path
+	http.Redirect(w, r, frontendURL+redirectPath+"?google_login=success", http.StatusTemporaryRedirect)
 }
 
 // LogoutHandler διαγράφει το token cookie
@@ -2775,12 +2865,38 @@ import (
 	"google_auth_service/handlers"
 	"google_auth_service/middlewares"
 	"google_auth_service/rabbitmq"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load .env file if it exists
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using system environment variables")
+	}
+
+	// Validate required environment variables
+	requiredEnvVars := []string{
+		"GOOGLE_CLIENT_ID",
+		"GOOGLE_CLIENT_SECRET",
+		"GOOGLE_REDIRECT_URL",
+		"JWT_SECRET",
+	}
+
+	for _, envVar := range requiredEnvVars {
+		if os.Getenv(envVar) == "" {
+			log.Fatalf("Required environment variable %s is not set", envVar)
+		}
+	}
+
+	// Log loaded configuration (without secrets)
+	log.Printf("Google Client ID: %s", os.Getenv("GOOGLE_CLIENT_ID"))
+	log.Printf("Redirect URL: %s", os.Getenv("GOOGLE_REDIRECT_URL"))
+
 	database.ConnectDatabase()
 	rabbitmq.Connect()
 	rabbitmq.StartGoogleAuthConsumer()
+
 	port := "8086"
 	if os.Getenv("PORT") != "" {
 		port = os.Getenv("PORT")
@@ -2796,6 +2912,7 @@ func main() {
 	http.Handle("/protected", middlewares.AuthMiddleware(protected))
 
 	fmt.Printf("Starting google_auth_service on port %s...\n", port)
+	fmt.Printf("Google OAuth redirect URL: %s\n", os.Getenv("GOOGLE_REDIRECT_URL"))
 	err := http.ListenAndServe(":"+port, nil)
 	if err != nil {
 		log.Fatalf("Server failed to start: %v", err)
@@ -2884,17 +3001,25 @@ func StartGoogleAuthConsumer() {
 		log.Fatal("RabbitMQ channel failed:", err)
 	}
 
+	// Declare exchange
+	err = ch.ExchangeDeclare("clearSky.events", "direct", true, false, false, false, nil)
+	if err != nil {
+		log.Fatal("Exchange declare failed:", err)
+	}
+
 	queue := "google_auth.request"
 	_, err = ch.QueueDeclare(queue, true, false, false, false, nil)
 	if err != nil {
 		log.Fatal("Queue declare failed:", err)
 	}
-	err = ch.QueueBind(queue, "auth.login.google", "orchestrator.commands", false, nil)
+
+	// Bind to the correct routing key
+	err = ch.QueueBind(queue, "auth.login.google", "clearSky.events", false, nil)
 	if err != nil {
 		log.Fatal("Queue bind failed:", err)
 	}
 
-	msgs, err := ch.Consume(queue, "", true, false, false, false, nil)
+	msgs, err := ch.Consume(queue, "", false, false, false, false, nil)
 	if err != nil {
 		log.Fatal("Consume failed:", err)
 	}
@@ -2903,6 +3028,8 @@ func StartGoogleAuthConsumer() {
 		for d := range msgs {
 			var req GoogleAuthRequest
 			if err := json.Unmarshal(d.Body, &req); err != nil {
+				log.Printf("Failed to unmarshal request: %v", err)
+				d.Nack(false, false)
 				continue
 			}
 
@@ -2912,18 +3039,18 @@ func StartGoogleAuthConsumer() {
 				resp.Status = "error"
 				resp.Message = "Invalid Google token"
 			} else {
-				// Find or create user with proper student_id handling
+				// Find or create user with proper role handling
 				var user database.User
 				result := database.DB.First(&user, "email = ?", email)
 
 				role := req.Role
 				if role == "" {
-					role = "student"
+					role = "institution_representative" // Default for Google users
 				}
 
 				var studentID string
 				if result.Error != nil {
-					// Create new user
+					// Create new user - only assign student_id if role is student
 					if role == "student" {
 						studentID = generateStudentID()
 					}
@@ -2935,11 +3062,14 @@ func StartGoogleAuthConsumer() {
 					}
 					database.DB.Create(&user)
 				} else {
-					studentID = user.StudentID
-					if role == "student" && studentID == "" {
-						studentID = generateStudentID()
-						user.StudentID = studentID
-						database.DB.Save(&user)
+					// Only use student_id for students
+					if user.Role == "student" {
+						studentID = user.StudentID
+						if studentID == "" && role == "student" {
+							studentID = generateStudentID()
+							user.StudentID = studentID
+							database.DB.Save(&user)
+						}
 					}
 				}
 
@@ -2963,6 +3093,7 @@ func StartGoogleAuthConsumer() {
 					},
 				)
 			}
+			d.Ack(false)
 		}
 	}()
 }
@@ -5589,19 +5720,21 @@ func HandleUserDelete(c *gin.Context, ch *amqp.Channel) {
 func HandleUserGoogleLogin(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
 		Token string `json:"token"`
+		Role  string `json:"role,omitempty"` // Add role support
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("[GoogleLogin] Invalid request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
-	log.Printf("[GoogleLogin] Attempting Google login with token.")
+	log.Printf("[GoogleLogin] Attempting Google login with token for role: %s", req.Role)
 
 	payload := map[string]interface{}{
 		"type":  "google_login",
 		"token": req.Token,
+		"role":  req.Role, // Include role in payload
 	}
-	resp, err := rpcRequest(ch, "", "auth.request", payload)
+	resp, err := rpcRequest(ch, "clearSky.events", "auth.login.google", payload)
 	if err != nil {
 		log.Printf("[GoogleLogin] RPC error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})

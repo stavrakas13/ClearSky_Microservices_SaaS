@@ -180,19 +180,21 @@ func HandleUserDelete(c *gin.Context, ch *amqp.Channel) {
 func HandleUserGoogleLogin(c *gin.Context, ch *amqp.Channel) {
 	var req struct {
 		Token string `json:"token"`
+		Role  string `json:"role,omitempty"` // Add role support
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("[GoogleLogin] Invalid request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
-	log.Printf("[GoogleLogin] Attempting Google login with token.")
+	log.Printf("[GoogleLogin] Attempting Google login with token for role: %s", req.Role)
 
 	payload := map[string]interface{}{
 		"type":  "google_login",
 		"token": req.Token,
+		"role":  req.Role, // Include role in payload
 	}
-	resp, err := rpcRequest(ch, "", "auth.request", payload)
+	resp, err := rpcRequest(ch, "clearSky.events", "auth.login.google", payload)
 	if err != nil {
 		log.Printf("[GoogleLogin] RPC error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})

@@ -10,6 +10,6 @@ type User struct {
 	Name      string
 	Picture   string
 	Provider  string `gorm:"default:'google'"`
-	Role      string `gorm:"default:'student'"`
+	Role      string `gorm:"default:'institution_representative'"`
 	StudentID string `gorm:"unique"`
 }
