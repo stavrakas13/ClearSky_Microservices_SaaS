@@ -64,7 +64,7 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 		return
 	}
 
-	log.Printf("[HandleGetPersonalGrades] 📥 request for student_id: %s", studentID)
+	log.Printf("[HandleGetPersonalGrades] 📥 Received request for student_id: %s", studentID)
 
 	// Build request with student_id from JWT
 	req := struct {
@@ -72,32 +72,36 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 	}{
 		StudentID: studentID,
 	}
+	log.Println("[HandleGetPersonalGrades] 🔧 Built request payload")
 
-	// 2. Declare reply queue
+	// Declare reply queue
 	replyQ, err := ch.QueueDeclare(
 		"", false, true, true, false, nil,
 	)
 	if err != nil {
-		log.Printf("[HandleGetGradesByAM] ❌ failed to declare reply queue: %v", err)
+		log.Printf("[HandleGetPersonalGrades] ❌ Failed to declare reply queue: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create reply queue"})
 		return
 	}
+	log.Printf("[HandleGetPersonalGrades] ✅ Reply queue declared: %s", replyQ.Name)
 
-	// 3. Start consuming
+	// Start consuming
 	msgs, err := ch.Consume(
 		replyQ.Name, "", true, true, false, false, nil,
 	)
 	if err != nil {
-		log.Printf("[HandleGetGradesByAM] ❌ failed to consume: %v", err)
+		log.Printf("[HandleGetPersonalGrades] ❌ Failed to start consuming: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to consume reply"})
 		return
 	}
+	log.Println("[HandleGetPersonalGrades] 🟢 Started consuming from reply queue")
 
-	// 4. Publish request
+	// Publish request
 	corrID := uuid.New().String()
 	body, _ := json.Marshal(req)
+	log.Printf("[HandleGetPersonalGrades] 📦 Publishing message with Correlation ID: %s", corrID)
 	err = ch.Publish(
-		"clearSky.events", // Exchange
+		"clearSky.events",
 		"view.avail",
 		false, false,
 		amqp.Publishing{
@@ -108,24 +112,29 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 		},
 	)
 	if err != nil {
-		log.Printf("[HandleGetGradesByAM] ❌ publish failed: %v", err)
+		log.Printf("[HandleGetPersonalGrades] ❌ Publish failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to publish request"})
 		return
 	}
+	log.Println("[HandleGetPersonalGrades] 🚀 Request published successfully")
 
+	// Set timeout for reply
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	log.Println("[HandleGetPersonalGrades] ⏳ Waiting for response...")
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("[HandleGetGradesByAM] ⏰ timeout waiting for reply")
+			log.Println("[HandleGetPersonalGrades] ⏰ Timeout while waiting for reply")
 			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "Service timeout"})
 			return
 
 		case d := <-msgs:
+			log.Printf("[HandleGetPersonalGrades] 📬 Received message with Correlation ID: %s", d.CorrelationId)
+
 			if d.CorrelationId != corrID {
-				log.Printf("[HandleGetGradesByAM] 🔍 ignoring message with corrID=%s", d.CorrelationId)
+				log.Printf("[HandleGetPersonalGrades] 🔄 Ignoring mismatched Correlation ID: %s", d.CorrelationId)
 				continue
 			}
 
@@ -135,16 +144,20 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 			}
 
 			if err := json.Unmarshal(d.Body, &gradesResp); err != nil {
-				log.Printf("[HandleGetGradesByAM] ❌ unmarshal failed: %v", err)
+				log.Printf("[HandleGetPersonalGrades] ❌ Failed to unmarshal response: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response format"})
 				return
 			}
 
+			log.Printf("[HandleGetPersonalGrades] ✅ Successfully received response with status: %s", gradesResp.Status)
+
 			statusCode := http.StatusOK
 			if gradesResp.Status != "ok" {
+				log.Printf("[HandleGetPersonalGrades] ⚠️ Non-ok status received: %s", gradesResp.Status)
 				statusCode = http.StatusBadRequest
 			}
 
+			log.Printf("[HandleGetPersonalGrades] 📤 Sending JSON response with status code: %d", statusCode)
 			c.JSON(statusCode, gradesResp)
 			return
 		}
