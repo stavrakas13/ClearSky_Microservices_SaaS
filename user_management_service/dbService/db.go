@@ -1,7 +1,12 @@
 package user_management_service
 
 import (
+	"log"
+	"os"
+
+	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
@@ -18,9 +23,25 @@ type User struct {
 
 // InitDB initializes the database connection and performs migrations
 func InitDB() {
-	// ...existing DB connection and migrations...
+	loadEnvVariables()
+	var err error
+	dsn := os.Getenv("DB_DSN")
+	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+
+	// Migrate the schema
 	DB.AutoMigrate(&User{})
 	seedDefaultUsers()
+}
+
+// loadEnvVariables loads environment variables from a .env file
+func loadEnvVariables() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
 }
 
 // seedDefaultUsers ensures default users exist for all roles
@@ -39,19 +60,39 @@ func seedAdminUser() {
 
 // seedStudentUser ensures a default student exists
 func seedStudentUser() {
-	passHash, _ := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
-	u := User{
-		Username:  "student",
-		Password:  string(passHash),
-		Role:      "student",
-		StudentID: "03181121",
+	var existingUser User
+	result := DB.Where("username = ?", "student").First(&existingUser)
+	if result.Error != nil {
+		// User doesn't exist, create it
+		passHash, _ := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
+		u := User{
+			Username:  "student",
+			Password:  string(passHash),
+			Role:      "student",
+			StudentID: "03181121",
+		}
+		DB.Create(&u)
+		log.Println("Created default student user")
+	} else {
+		log.Println("Student user already exists")
 	}
-	DB.FirstOrCreate(&u, User{Username: "student"})
 }
 
 // seedInstructorUser ensures a default instructor exists
 func seedInstructorUser() {
-	passHash, _ := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
-	u := User{Username: "instructor", Password: string(passHash), Role: "instructor"}
-	DB.FirstOrCreate(&u, User{Username: "instructor"})
+	var existingUser User
+	result := DB.Where("username = ?", "instructor").First(&existingUser)
+	if result.Error != nil {
+		// User doesn't exist, create it
+		passHash, _ := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
+		u := User{
+			Username: "instructor",
+			Password: string(passHash),
+			Role:     "instructor",
+		}
+		DB.Create(&u)
+		log.Println("Created default instructor user")
+	} else {
+		log.Println("Instructor user already exists")
+	}
 }

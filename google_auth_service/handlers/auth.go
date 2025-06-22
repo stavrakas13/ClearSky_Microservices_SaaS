@@ -102,7 +102,7 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Validate email is allowed
 	if !isEmailAllowed(email) {
-		http.Error(w, "Access denied: Your email domain is not authorized for this application", http.StatusForbidden)
+		http.Error(w, "Access denied: Your email is not authorized for this application", http.StatusForbidden)
 		return
 	}
 
@@ -157,11 +157,13 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set cookie with proper domain settings for localhost
 	cookie := http.Cookie{
 		Name:     "token",
 		Value:    jwtToken,
 		Path:     "/",
-		HttpOnly: true,
+		Domain:   "",    // Empty domain for localhost
+		HttpOnly: false, // Set to false so frontend can read it
 		Secure:   false, // Set to true in production with HTTPS
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   86400, // 1 day
@@ -186,25 +188,14 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	buf, _ := json.Marshal(upsertPayload)
 	http.Post(umsHost+"/upsert", "application/json", bytes.NewBuffer(buf))
 
-	// Redirect to frontend based on user role
-	var redirectPath string
-	switch user.Role {
-	case "student":
-		redirectPath = "/student"
-	case "instructor":
-		redirectPath = "/instructor"
-	case "institution_representative":
-		redirectPath = "/institution"
-	default:
-		redirectPath = "/"
-	}
-
+	// Redirect to frontend with Google login success parameter
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:3000"
 	}
 
-	http.Redirect(w, r, frontendURL+redirectPath, http.StatusSeeOther)
+	// Always redirect to frontend callback to handle session setup
+	http.Redirect(w, r, frontendURL+"/auth/google/callback?google_login=success&role="+user.Role+"&email="+email, http.StatusTemporaryRedirect)
 }
 
 // LogoutHandler διαγράφει το token cookie

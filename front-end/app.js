@@ -72,40 +72,43 @@ app.get('/auth/google/login', (req, res) => {
 
 // Handle successful Google login callback
 app.get('/auth/google/callback', (req, res) => {
-  // This route is called when Google Auth Service redirects back
-  // The JWT should already be in a cookie set by Google Auth Service
+  console.log('Google callback received:', req.query);
   
   // Check if we have a JWT cookie
   const token = req.cookies.token;
-  if (token) {
-    // Set session based on the JWT token
-    // For now, we'll default to institution_representative for Google users
+  const role = req.query.role || 'institution_representative';
+  const email = req.query.email;
+  
+  if (token && req.query.google_login === 'success') {
+    // Set session for Google user
     req.session.user = {
-      username: 'google_user',
-      role: 'institution_representative'
+      username: email || 'google_user',
+      role: role
     };
-    res.redirect('/institution?google_login=success');
+    
+    console.log('Set session user:', req.session.user);
+    
+    // Redirect based on role
+    let redirectPath = '/';
+    switch (role) {
+      case 'student':
+        redirectPath = '/student';
+        break;
+      case 'instructor':
+        redirectPath = '/instructor';
+        break;
+      case 'institution_representative':
+        redirectPath = '/institution';
+        break;
+      default:
+        redirectPath = '/';
+    }
+    
+    res.redirect(redirectPath);
   } else {
+    console.log('Google login failed - no token or success flag');
     res.redirect('/login?error=google_login_failed');
   }
-});
-
-// Add middleware to check for Google login and set session
-app.use((req, res, next) => {
-  // Check for JWT cookie and google_login parameter
-  if (req.query.google_login === 'success' && req.cookies && req.cookies.token && !req.session.user) {
-    // This is a Google login callback, validate the JWT and set session
-    try {
-      // For now, we'll trust the cookie and set default Google user session
-      req.session.user = {
-        username: 'google_user',
-        role: 'institution_representative'
-      };
-    } catch (error) {
-      console.error('Error processing Google login:', error);
-    }
-  }
-  next();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
