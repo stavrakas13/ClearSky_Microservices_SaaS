@@ -1,6 +1,7 @@
 // front-end/app.js
 import express           from 'express';
 import session           from 'express-session';
+import cookieParser      from 'cookie-parser'; // Add cookie parser import
 import path              from 'path';
 import { fileURLToPath } from 'url';
 import morgan            from 'morgan';
@@ -24,6 +25,7 @@ const GOOGLE_AUTH_URL =
 // 1)  3rd-party middleware
 // ─────────────────────────────────────────────────────────────────────────────
 app.use(morgan('dev'));
+app.use(cookieParser()); // Add cookie parser middleware
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2)  Static assets
@@ -76,9 +78,13 @@ app.get('/auth/google/callback', (req, res) => {
   // Check if we have a JWT cookie
   const token = req.cookies.token;
   if (token) {
-    // You might want to validate the token here
-    // For now, we'll trust it and redirect based on role
-    res.redirect('/?google_login=success');
+    // Set session based on the JWT token
+    // For now, we'll default to institution_representative for Google users
+    req.session.user = {
+      username: 'google_user',
+      role: 'institution_representative'
+    };
+    res.redirect('/institution?google_login=success');
   } else {
     res.redirect('/login?error=google_login_failed');
   }
@@ -87,25 +93,17 @@ app.get('/auth/google/callback', (req, res) => {
 // Add middleware to check for Google login and set session
 app.use((req, res, next) => {
   // Check for JWT cookie and google_login parameter
-  if (req.query.google_login === 'success' && req.cookies.token && !req.session.user) {
-    // This is a Google login callback, we should validate the JWT and set session
-    // For now, we'll extract basic info from the URL path to set session
-    const path = req.path;
-    let role = 'institution_representative';
-    
-    if (path.startsWith('/institution')) {
-      role = 'institution_representative';
-    } else if (path.startsWith('/instructor')) {
-      role = 'instructor';
-    } else if (path.startsWith('/student')) {
-      role = 'student';
+  if (req.query.google_login === 'success' && req.cookies && req.cookies.token && !req.session.user) {
+    // This is a Google login callback, validate the JWT and set session
+    try {
+      // For now, we'll trust the cookie and set default Google user session
+      req.session.user = {
+        username: 'google_user',
+        role: 'institution_representative'
+      };
+    } catch (error) {
+      console.error('Error processing Google login:', error);
     }
-    
-    // Set session for Google user
-    req.session.user = {
-      username: 'google_user', // You might want to decode the JWT to get actual username
-      role: role
-    };
   }
   next();
 });
@@ -242,3 +240,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
   console.log(`✔ Front-end listening at http://localhost:${PORT}`)
 );
+
