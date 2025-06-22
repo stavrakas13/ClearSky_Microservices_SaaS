@@ -242,11 +242,13 @@ services:
     ports:
       - "27018:27017"
     volumes:
+      # named volume for the datafiles (persists /data/db)
       - final_grades_db_data:/data/db
-      - ./final_grades/init.js:/docker-entrypoint-initdb.d/init.js
+      # mount your init scripts (will only run on an empty /data/db)
+      - ./final_grades/mongodb:/docker-entrypoint-initdb.d:ro
     networks:
-        - clearSky-net
-  
+      - clearSky-net
+
   final_grades_service:
     build:
       context: ./final_grades
