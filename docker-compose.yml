@@ -282,7 +282,7 @@ services:
     restart: always
     environment:
       - MYSQL_URI=mysql://user:password@stats_db:3306/stats
-      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_ROOT_PASSWORD=password
       - MYSQL_DATABASE=stats
       - MYSQL_USER=user
       - MYSQL_PASSWORD=password
@@ -328,7 +328,7 @@ services:
     restart: always
     environment:
       - MYSQL_URI=mysql://user:password@view_grades_db:3306/view_grades
-      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_ROOT_PASSWORD=password
       - MYSQL_DATABASE=view_grades
       - MYSQL_USER=user
       - MYSQL_PASSWORD=password
