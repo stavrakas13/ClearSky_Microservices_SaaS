@@ -1,4 +1,7 @@
--- Προτείνεται χρήση InnoDB για foreign keys
+CREATE USER IF NOT EXISTS 'user'@'%' IDENTIFIED BY 'password';
+GRANT ALL PRIVILEGES ON view_grades.* TO 'user'@'%';
+FLUSH PRIVILEGES;
+
 CREATE DATABASE IF NOT EXISTS view_grades CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE view_grades;
 
