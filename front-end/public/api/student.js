@@ -1,14 +1,22 @@
 // student.js
 import { request } from './_request.js';
 
-export const postReviewRequest = ({ user_id, course_id, exam_period, student_message }) =>
+/**
+ * Submit a new review request.
+ * orchestrator: PATCH /student/reviewRequest
+ */
+export const postReviewRequest = ({ course_id, exam_period, student_message }) =>
   request('/student/reviewRequest', {
     method : 'PATCH',
-    body   : { user_id, course_id, exam_period, student_message }
+    body   : { course_id, exam_period, student_message }
   });
 
-export const getReviewStatus = ({ user_id, course_id, exam_period }) =>
+/**
+ * Check review status.
+ * orchestrator: PATCH /student/status
+ */
+export const getReviewStatus = ({ course_id, exam_period }) =>
   request('/student/status', {
     method : 'PATCH',
-    body   : { user_id, course_id, exam_period }
+    body   : { course_id, exam_period }
   });

@@ -8,37 +8,37 @@ import morgan            from 'morgan';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app       = express();
 
-/*───────────────────────────────────────────────────────────
-   0)  API base-URL resolution
-       ───────────────────────
-       • Prefer GO_API_URL (new name, set in docker-compose.yml)
-       • Fallback to ORCHESTRATOR_URL (legacy name)
-       • Final fallback to service name + port for Docker networks
-───────────────────────────────────────────────────────────*/
-const API_BASE =
-  process.env.GO_API_URL ||
+// ─────────────────────────────────────────────────────────────────────────────
+// 0)  API base-URL resolution
+// ─────────────────────────────────────────────────────────────────────────────
+const API_BASE        =
+  process.env.GO_API_URL       ||
   process.env.ORCHESTRATOR_URL ||
-  'http://orchestrator:8080';   // ← last-resort default
+  'http://orchestrator:8080';
 
-/*───────────────────────────
-  1) 3rd-party middleware
-───────────────────────────*/
+const GOOGLE_AUTH_URL =
+  process.env.GOOGLE_AUTH_URL ||
+  'http://localhost:8086';    // your google_auth_service
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1)  3rd-party middleware
+// ─────────────────────────────────────────────────────────────────────────────
 app.use(morgan('dev'));
 
-/*───────────────────────────
-  2) Static assets
-───────────────────────────*/
+// ─────────────────────────────────────────────────────────────────────────────
+// 2)  Static assets
+// ─────────────────────────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 
-/*───────────────────────────
-  3) Body-parsers
-───────────────────────────*/
+// ─────────────────────────────────────────────────────────────────────────────
+// 3)  Body-parsers
+// ─────────────────────────────────────────────────────────────────────────────
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-/*───────────────────────────
-  4) Sessions  (+ locals helper)
-───────────────────────────*/
+// ─────────────────────────────────────────────────────────────────────────────
+// 4)  Sessions & locals
+// ─────────────────────────────────────────────────────────────────────────────
 app.use(session({
   secret           : 'change-this-secret',
   resave           : false,
@@ -47,29 +47,39 @@ app.use(session({
 app.use((req, res, next) => {
   res.locals.user       = req.session.user || null;
   res.locals.currentUrl = req.originalUrl;
-
-  // Inject for <script> in views/partials/head.ejs
   res.locals.API_BASE   = API_BASE;
-
   next();
 });
 
-/*───────────────────────────
-  5) EJS templating
-───────────────────────────*/
+// ─────────────────────────────────────────────────────────────────────────────
+// 5)  EJS templating
+// ─────────────────────────────────────────────────────────────────────────────
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-/*───────────────────────────
-  6) Auth helper
-───────────────────────────*/
+// ─────────────────────────────────────────────────────────────────────────────
+// 6)  GOOGLE OAUTH PROXY
+//    Forward front-end `/auth/google/...` to your google_auth_service.
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/auth/google/login', (req, res) => {
+  const role = req.query.role || 'student';
+  res.redirect(`${GOOGLE_AUTH_URL}/auth/google/login?role=${role}`);
+});
+
+app.get('/auth/google/callback', (req, res) => {
+  // After Google sets the cookie, redirect back to home (or wherever you like)
+  res.redirect('/');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7)  Auth helper
+// ─────────────────────────────────────────────────────────────────────────────
 function auth(role) {
   return (req, res, next) => {
     if (!req.session.user) return res.redirect('/login');
     if (role) {
-      // accept institution + representative aliases
       if (role === 'institution') {
-        if (!['institution', 'representative', 'institution_representative']
+        if (!['institution','representative','institution_representative']
               .includes(req.session.user.role)) {
           return res.redirect(`/${req.session.user.role}`);
         }
@@ -81,14 +91,14 @@ function auth(role) {
   };
 }
 
-/*───────────────────────────
-  7) Dummy users (dev only)
-───────────────────────────*/
+// ─────────────────────────────────────────────────────────────────────────────
+// 8)  Dummy users (dev only)
+// ─────────────────────────────────────────────────────────────────────────────
 const users = { alice: 'student', bob: 'instructor', iris: 'institution' };
 
-/*───────────────────────────
-  8) UI routes
-───────────────────────────*/
+// ─────────────────────────────────────────────────────────────────────────────
+// 9)  UI routes
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Home
 app.get('/', (req, res) => {
@@ -96,7 +106,7 @@ app.get('/', (req, res) => {
   res.redirect(`/${req.session.user.role}`);
 });
 
-// Signup / Login ────────────────────────────────────────────
+// Signup / Login
 app.get('/signup', (_, res) =>
   res.render('signup', { title: 'Sign Up', user: null })
 );
@@ -109,8 +119,7 @@ app.get('/login', (_, res) =>
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
-    // Call orchestrator → user-management service
-    const response = await fetch(`${API_BASE}/user/login`, {   // ← uses unified API_BASE
+    const response = await fetch(`${API_BASE}/user/login`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body   : JSON.stringify({ username, password })
@@ -125,11 +134,9 @@ app.post('/login', async (req, res) => {
       });
     }
 
-    // ⚠️  SAVE USER TO SESSION
     req.session.user = { username, role: data.role };
 
-    // Redirect by role
-    if (['institution_representative', 'representative']
+    if (['institution_representative','representative']
         .includes(data.role))      return res.redirect('/institution');
     else if (data.role === 'instructor') return res.redirect('/instructor');
     else if (data.role === 'student')    return res.redirect('/student');
@@ -156,7 +163,7 @@ app.get('/logout', (req, res) =>
   req.session.destroy(() => res.redirect('/login'))
 );
 
-// Student UI ────────────────────────────────────────────────
+// Student UI
 app.get('/student',            auth('student'), (req,res)=>res.render('student/dashboard',    { user:req.session.user, title:'Dashboard' }));
 app.get('/student/statistics', auth('student'), (req,res)=>res.render('student/statistics',   { user:req.session.user, title:'Statistics' }));
 app.get('/student/my-courses', auth('student'), (req,res)=>res.render('student/myCourses',    { user:req.session.user, title:'My Courses' }));
@@ -164,7 +171,7 @@ app.get('/student/request',    auth('student'), (req,res)=>res.render('student/r
 app.get('/student/status',     auth('student'), (req,res)=>res.render('student/reviewStatus', { user:req.session.user, title:'Review Status' }));
 app.get('/student/personal',   auth('student'), (req,res)=>res.render('student/personal',     { user:req.session.user, title:'Personal Grades' }));
 
-// Instructor UI ─────────────────────────────────────────────
+// Instructor UI
 app.get('/instructor',              auth('instructor'), (req,res)=>res.render('instructor/dashboard', { user:req.session.user, title:'Dashboard' }));
 app.get('/instructor/post-initial', auth('instructor'), (req,res)=>res.render('instructor/postInitial',{ user:req.session.user, title:'Post Initial' }));
 app.get('/instructor/post-final',   auth('instructor'), (req,res)=>res.render('instructor/postFinal',  { user:req.session.user, title:'Post Final' }));
@@ -182,16 +189,16 @@ app.get('/instructor/reply',        auth('instructor'), (req,res)=>{
 });
 app.get('/instructor/statistics',   auth('instructor'), (req,res)=>res.render('instructor/statistics', { user:req.session.user, title:'Statistics' }));
 
-// Institution UI ────────────────────────────────────────────
+// Institution UI
 app.get('/institution',                 auth('institution'), (req,res)=>res.render('institution/dashboard',      { user:req.session.user, title:'Dashboard' }));
 app.get('/institution/register',        auth('institution'), (req,res)=>res.render('institution/register',       { user:req.session.user, title:'Register' }));
 app.get('/institution/purchase',        auth('institution'), (req,res)=>res.render('institution/purchase',       { user:req.session.user, title:'Purchase' }));
 app.get('/institution/user-management', auth('institution'), (req,res)=>res.render('institution/userManagement', { user:req.session.user, title:'Users' }));
 app.get('/institution/statistics',      auth('institution'), (req,res)=>res.render('institution/statistics',     { user:req.session.user, title:'Statistics' }));
 
-/*───────────────────────────
-  9) Server start-up
-───────────────────────────*/
+// ─────────────────────────────────────────────────────────────────────────────
+// 10) Server start-up
+// ─────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
   console.log(`✔ Front-end listening at http://localhost:${PORT}`)

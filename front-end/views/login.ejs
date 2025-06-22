@@ -12,7 +12,6 @@
 
       <!-- classic form POST -->
       <form id="login-form" action="/login" method="post">
-
         <div class="form-group">
           <label for="username">User name</label>
           <input id="username" name="username" required />
@@ -30,6 +29,13 @@
       <% if (error) { %>
         <p style="color:#c00;margin-top:1rem;"><%= error %></p>
       <% } %>
+
+      <!-- GOOGLE LOGIN BUTTON -->
+      <a id="google-login-btn" class="button button--secondary"
+         href="/auth/google/login"
+         style="margin-top:0.75rem;display:inline-block;">
+        Login with&nbsp;Google
+      </a>
     </fieldset>
   </main>
 </body>

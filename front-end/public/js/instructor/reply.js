@@ -1,22 +1,16 @@
 // public/js/instructor/reply.js
-
-import { flash } from '../../script.js';
+import { flash } from '../script.js';
 import { postInstructorReply } from '../../api/instructor.js';
 
-// Now matching action="/api/instructor/reply"
-const form = document.querySelector('form[action="/instructor/reply"]');
+const form = document.querySelector('#instructor-reply-form');
 
 form.addEventListener('submit', async e => {
   e.preventDefault();
 
-  // grab the request ID from the querystring
-  const params = new URLSearchParams(location.search);
-  const reqId  = params.get('req');
-
-  // you can also pull these from hidden inputs if you prefer
-  const course_id               = 'software II';
-  const exam_period             = 'spring 2025';
-  const user_id                 = reqId;
+  const params       = new URLSearchParams(location.search);
+  const user_id      = params.get('req');                // the student’s ID
+  const course_id    = 'software II';                    // or pull from hidden input
+  const exam_period  = 'spring 2025';                    // likewise
   const instructor_reply_message = form.message.value.trim();
   const instructor_action        = form.decision.value;
 
@@ -29,6 +23,8 @@ form.addEventListener('submit', async e => {
       instructor_action
     });
     flash('Reply sent!');
+    // Optionally redirect back to the list:
+    // window.location.href = '/instructor/review-list';
   } catch (err) {
     flash(err.message);
   }

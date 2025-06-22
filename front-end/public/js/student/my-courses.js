@@ -4,8 +4,10 @@ import { getStudentCourses } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const { data } = await getStudentCourses({ user_id: 'alice' });
+    // now GET /stats/available
+    const { data } = await getStudentCourses();
 
+    // Assuming data is an array of submissions: { course_name, exam_period, status, id }
     const tbody = document.querySelector('table tbody');
     tbody.innerHTML = data
       .map(c => `
