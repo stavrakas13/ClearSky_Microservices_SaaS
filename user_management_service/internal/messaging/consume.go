@@ -19,6 +19,7 @@ type AuthRequest struct {
 	Username    string `json:"username,omitempty"`
 	Password    string `json:"password,omitempty"`
 	Role        string `json:"role,omitempty"`
+	StudentID   string `json:"student_id,omitempty"` // Add student_id field
 	OldPassword string `json:"old_password,omitempty"`
 	NewPassword string `json:"new_password,omitempty"`
 }
@@ -54,16 +55,39 @@ func ConsumeAuthQueue(db *gorm.DB) {
 					resp = AuthResponse{Status: "error", Message: "Username required"}
 					goto send
 				}
+
+				// Check if student_id is required for student role
+				role := req.Role
+				if role == "" {
+					role = "student"
+				}
+
+				if role == "student" && req.StudentID == "" {
+					resp = AuthResponse{Status: "error", Message: "Student ID required for student registration"}
+					goto send
+				}
+
 				var existing model.User
 				if err := db.Where("username = ?", req.Username).First(&existing).Error; err == nil {
 					resp = AuthResponse{Status: "error", Message: "Username already registered"}
 				} else {
-					role := req.Role
-					if role == "" {
-						role = "student"
+					// Check if student_id already exists (if provided)
+					if req.StudentID != "" {
+						var existingStudent model.User
+						if err := db.Where("student_id = ?", req.StudentID).First(&existingStudent).Error; err == nil {
+							resp = AuthResponse{Status: "error", Message: "Student ID already registered"}
+							goto send
+						}
 					}
+
 					hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-					user := model.User{ID: uuid.NewString(), Username: req.Username, PasswordHash: string(hash), Role: role}
+					user := model.User{
+						ID:           uuid.NewString(),
+						Username:     req.Username,
+						PasswordHash: string(hash),
+						Role:         role,
+						StudentID:    req.StudentID, // Set student_id
+					}
 					if err := db.Create(&user).Error; err != nil {
 						resp = AuthResponse{Status: "error", Message: "Failed to create user"}
 					} else {
