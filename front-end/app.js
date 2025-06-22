@@ -7,7 +7,18 @@ import morgan            from 'morgan';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app       = express();
-const API_BASE  = process.env.ORCHESTRATOR_URL || 'http://orchestrator:8080';
+
+/*───────────────────────────────────────────────────────────
+   0)  API base-URL resolution
+       ───────────────────────
+       • Prefer GO_API_URL (new name, set in docker-compose.yml)
+       • Fallback to ORCHESTRATOR_URL (legacy name)
+       • Final fallback to service name + port for Docker networks
+───────────────────────────────────────────────────────────*/
+const API_BASE =
+  process.env.GO_API_URL ||
+  process.env.ORCHESTRATOR_URL ||
+  'http://orchestrator:8080';   // ← last-resort default
 
 /*───────────────────────────
   1) 3rd-party middleware
@@ -36,7 +47,10 @@ app.use(session({
 app.use((req, res, next) => {
   res.locals.user       = req.session.user || null;
   res.locals.currentUrl = req.originalUrl;
-  res.locals.API_BASE   = process.env.ORCHESTRATOR_URL || '';
+
+  // Inject for <script> in views/partials/head.ejs
+  res.locals.API_BASE   = API_BASE;
+
   next();
 });
 
@@ -96,7 +110,7 @@ app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
     // Call orchestrator → user-management service
-    const response = await fetch(`${API_BASE}/user/login`, {   // ← fixed line
+    const response = await fetch(`${API_BASE}/user/login`, {   // ← uses unified API_BASE
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body   : JSON.stringify({ username, password })
