@@ -11,19 +11,23 @@ import (
 var jwtKey = []byte(os.Getenv("JWT_SECRET"))
 
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
+	UserID    string `json:"user_id"`
+	Username  string `json:"username,omitempty"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	StudentID string `json:"student_id,omitempty"` // Add student_id field
 	jwt.RegisteredClaims
 }
 
-func GenerateJWT(userID, email, role string) (string, error) {
+func GenerateJWT(userID, email, role, studentID string) (string, error) {
 	expirationTime := time.Now().Add(24 * time.Hour)
 
 	claims := &Claims{
-		UserID: userID,
-		Email:  email,
-		Role:   role,
+		UserID:    userID,
+		Username:  email, // Use email as username for Google users
+		Email:     email,
+		Role:      role,
+		StudentID: studentID, // Include student_id in JWT
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},

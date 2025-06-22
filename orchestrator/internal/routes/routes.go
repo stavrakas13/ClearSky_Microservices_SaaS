@@ -25,46 +25,42 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	// 16 MiB in‐memory before spilling to /tmp
 	r.MaxMultipartMemory = 16 << 20
 
-	// Shared stats endpoints (all roles)
-	stats := r.Group("/stats")
+	// Student only - with proper JWT middleware and student validation
+	std := r.Group("/")
+	std.Use(mw.JWTAuthMiddleware()) // Add JWT middleware
+	std.Use(func(c *gin.Context) {  // Add student role validation
+		role := c.GetString("role")
+		if role != "student" {
+			c.JSON(403, gin.H{"error": "Access restricted to students only"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	})
 	{
-		stats.GET("/available", func(c *gin.Context) {
-			handlers.HandleSubmissionLogs(c, ch)
+		std.GET("/personal/grades", func(c *gin.Context) {
+			handlers.HandleGetPersonalGrades(c, ch)
 		})
-		stats.GET("/courses", func(c *gin.Context) {
-			handlers.HandleSubmissionLogs(c, ch)
+		std.PATCH("/student/reviewRequest", func(c *gin.Context) {
+			handlers.HandlePostNewRequest(c, ch)
+		})
+		std.PATCH("/student/status", func(c *gin.Context) {
+			handlers.HandleGetRequestStatus(c, ch)
 		})
 	}
 
-	// Institution‐representative only (allowing both "institution_representative" AND "representative")
-	inst := r.Group("/")
-	inst.Use(
-		mw.JWTAuthMiddleware(),
-		func(c *gin.Context) {
-			role := c.GetString("role")
-			if role != "institution_representative" && role != "representative" {
-				c.JSON(403, gin.H{"error": "forbidden"})
-				c.Abort()
-				return
-			}
-			c.Next()
-		},
-	)
-	{
-		inst.POST("/registration", func(c *gin.Context) {
-			handlers.HandleInstitutionRegistered(c, ch)
-		})
-		inst.PATCH("/purchase", func(c *gin.Context) {
-			handlers.HandleCreditsPurchased(c, ch)
-		})
-		inst.GET("/mycredits", func(c *gin.Context) {
-			handlers.HandleCreditsAvail(c, ch)
-		})
-	}
-
-	// Instructor only
+	// Instructor only - add proper middleware
 	instr := r.Group("/")
-	// instr.Use(mw.JWTAuthMiddleware(), RoleCheck("instructor"))
+	instr.Use(mw.JWTAuthMiddleware())
+	instr.Use(func(c *gin.Context) {
+		role := c.GetString("role")
+		if role != "instructor" {
+			c.JSON(403, gin.H{"error": "Access restricted to instructors only"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	})
 	{
 		instr.POST("/upload_init", func(c *gin.Context) {
 			handlers.UploadExcelInit(c, ch)
@@ -77,21 +73,6 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		})
 		instr.PATCH("/instructor/reply", func(c *gin.Context) {
 			handlers.HandlePostResponse(c, ch)
-		})
-	}
-
-	// Student only
-	std := r.Group("/")
-	// std.Use(mw.JWTAuthMiddleware(), RoleCheck("student"))
-	{
-		std.GET("/personal/grades", func(c *gin.Context) {
-			handlers.HandleGetPersonalGrades(c, ch)
-		})
-		std.PATCH("/student/reviewRequest", func(c *gin.Context) {
-			handlers.HandlePostNewRequest(c, ch)
-		})
-		std.PATCH("/student/status", func(c *gin.Context) {
-			handlers.HandleGetRequestStatus(c, ch)
 		})
 	}
 
@@ -111,6 +92,18 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		})
 		r.PATCH("/user/change-password", func(c *gin.Context) {
 			handlers.HandleUserChangePassword(c, ch)
+		})
+	}
+
+	// Shared stats endpoints (all roles)
+	stats := r.Group("/stats")
+	stats.Use(mw.JWTAuthMiddleware()) // Add JWT middleware
+	{
+		stats.GET("/available", func(c *gin.Context) {
+			handlers.HandleSubmissionLogs(c, ch)
+		})
+		stats.GET("/courses", func(c *gin.Context) {
+			handlers.HandleSubmissionLogs(c, ch)
 		})
 	}
 

@@ -10,8 +10,8 @@ import (
 	"google_auth_service/utils"
 	"net/http"
 	"os"
-
-	"github.com/google/uuid"
+	"strconv"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -39,6 +39,13 @@ func normalizeRole(r string) string {
 	default:
 		return "student"
 	}
+}
+
+// generateStudentID creates a unique student ID for new student users
+func generateStudentID() string {
+	// Generate a simple numeric student ID based on timestamp and random component
+	timestamp := time.Now().Unix()
+	return fmt.Sprintf("STU%d", timestamp%1000000)
 }
 
 // Redirects user to Google's consent screen
@@ -81,11 +88,48 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// derive role from state
 	role := normalizeRole(r.URL.Query().Get("state"))
-	jwtToken, err := utils.GenerateJWT(
-		uuid.NewString(),
-		userInfo["email"].(string),
-		role,
-	)
+	email := userInfo["email"].(string)
+	name := userInfo["name"].(string)
+	picture := userInfo["picture"].(string)
+
+	// Find or create user in local database
+	var user database.User
+	result := database.DB.First(&user, "email = ?", email)
+
+	var studentID string
+	if result.Error != nil {
+		// Create new user
+		if role == "student" {
+			studentID = generateStudentID()
+		}
+
+		user = database.User{
+			Email:     email,
+			Name:      name,
+			Picture:   picture,
+			Provider:  "google",
+			Role:      role,
+			StudentID: studentID,
+		}
+		database.DB.Create(&user)
+	} else {
+		// Update existing user
+		user.Name = name
+		user.Picture = picture
+		if user.Role != role {
+			user.Role = role
+			// If changing to student and no student_id, generate one
+			if role == "student" && user.StudentID == "" {
+				user.StudentID = generateStudentID()
+			}
+		}
+		database.DB.Save(&user)
+		studentID = user.StudentID
+	}
+
+	// Generate JWT with student_id
+	userIDStr := strconv.Itoa(int(user.ID))
+	jwtToken, err := utils.GenerateJWT(userIDStr, email, user.Role, user.StudentID)
 	if err != nil {
 		http.Error(w, "Failed to generate JWT: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -107,33 +151,20 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprint(w, "<h1>Login successful! Το token έχει αποθηκευτεί στο cookie.</h1>")
 
-	email := userInfo["email"].(string)
-	name := userInfo["name"].(string)
-	picture := userInfo["picture"].(string)
-
-	// Ψάχνουμε αν υπάρχει ήδη
-	var user database.User
-	result := database.DB.First(&user, "email = ?", email)
-
-	if result.Error != nil {
-		// Αν δεν υπάρχει, δημιουργούμε νέο χρήστη
-		user = database.User{
-			Email:    email,
-			Name:     name,
-			Picture:  picture,
-			Provider: "google",
-		}
-		database.DB.Create(&user)
-	}
 	rabbitmq.PublishLoginEvent(email)
 
-	// ─── Upsert into User Management Service ───
+	// Sync with User Management Service
 	umsHost := os.Getenv("UMS_URL")
 	if umsHost == "" {
 		umsHost = "http://user_management_service:8082"
 	}
-	up := map[string]string{"email": email, "role": role}
-	buf, _ := json.Marshal(up)
+
+	upsertPayload := map[string]interface{}{
+		"email":      email,
+		"role":       user.Role,
+		"student_id": user.StudentID,
+	}
+	buf, _ := json.Marshal(upsertPayload)
 	http.Post(umsHost+"/upsert", "application/json", bytes.NewBuffer(buf))
 }
 

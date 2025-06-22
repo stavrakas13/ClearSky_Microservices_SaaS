@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"orchestrator/internal/middleware"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -62,10 +63,22 @@ func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[str
 // handleReviewRequested processes new request events
 // -> sends 2 events: student.postNewRequest & instructor.insertStudentRequest
 func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
-	// receive message
+	// Get student info from JWT using middleware helpers
+	studentID := middleware.GetStudentID(c)
+	userID := middleware.GetUserID(c)
+
+	if !middleware.IsStudent(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only students can submit review requests"})
+		return
+	}
+
+	if studentID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Student ID is required for review requests"})
+		return
+	}
+
 	var req struct {
 		CourseID       int    `json:"course_id"`
-		UserID         string `json:"user_id"`
 		StudentMessage string `json:"student_message"`
 		ExamPeriod     string `json:"exam_period"`
 	}
@@ -74,12 +87,13 @@ func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
 		return
 	}
 
-	// add message payload
+	// Build payload with student info from JWT
 	payload, _ := json.Marshal(map[string]interface{}{
 		"body": map[string]interface{}{
 			"exam_period":     req.ExamPeriod,
 			"course_id":       req.CourseID,
-			"user_id":         req.UserID,
+			"user_id":         userID,
+			"student_id":      studentID, // Add student_id from JWT
 			"student_message": req.StudentMessage,
 		},
 	})
@@ -101,10 +115,17 @@ func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
 // handleGetRequestStatus processes student sees request status events
 // -> sends 1 event: student.getRequestStatus
 func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
-	// receive message
+	// Get student info from JWT using middleware helpers
+	studentID := middleware.GetStudentID(c)
+	userID := middleware.GetUserID(c)
+
+	if !middleware.IsStudent(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only students can check request status"})
+		return
+	}
+
 	var req struct {
 		CourseID   int    `json:"course_id"`
-		UserID     string `json:"user_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -112,12 +133,12 @@ func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
 		return
 	}
 
-	// add message payload
 	payload, _ := json.Marshal(map[string]interface{}{
 		"body": map[string]interface{}{
 			"exam_period": req.ExamPeriod,
 			"course_id":   req.CourseID,
-			"user_id":     req.UserID,
+			"user_id":     userID,
+			"student_id":  studentID, // Add student_id from JWT
 		},
 	})
 	responseStudent, err := helperRequest(ch, "student.getRequestStatus", payload)
