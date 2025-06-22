@@ -281,9 +281,9 @@ services:
     image: mysql:8.0
     restart: always
     environment:
-      - MYSQL_URI=mysql://user:password@mysql:3306/statsdb
+      - MYSQL_URI=mysql://user:password@mysql:3306/stats
       - MYSQL_ROOT_PASSWORD=root
-      - MYSQL_DATABASE=statsdb
+      - MYSQL_DATABASE=stats
       - MYSQL_USER=user
       - MYSQL_PASSWORD=password
     ports:
@@ -304,8 +304,8 @@ services:
       - stats_db
     environment:
       - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
-      - DATABASE_URL=mysql://user:password@stats_db:3306/statsdb
-      - MYSQL_URI=mysql://user:password@stats_db:3306/statsdb
+      - DATABASE_URL=mysql://user:password@stats_db:3306/stats
+      - MYSQL_URI=mysql://user:password@stats_db:3306/stats
       - RABBITMQ_URI=amqp://rabbitmq:5672
       - RABBITMQ_EXCHANGE=clearSky.events
       - RABBITMQ_ROUTING_KEY=postgrades.statistics
@@ -320,9 +320,9 @@ services:
     image: mysql:8.0
     restart: always
     environment:
-      - MYSQL_URI=mysql://user:password@mysql:3306/viewgradesdb
+      - MYSQL_URI=mysql://user:password@mysql:3306/view_grades
       - MYSQL_ROOT_PASSWORD=root
-      - MYSQL_DATABASE=viewgradesdb
+      - MYSQL_DATABASE=view_grades
       - MYSQL_USER=user
       - MYSQL_PASSWORD=password
     ports:
@@ -346,8 +346,8 @@ services:
       - RABBITMQ_URI=amqp://rabbitmq:5672
 
       - AMQP_URL=amqp://guest:guest@rabbitmq:5672/
-      - DATABASE_URL=mysql://user:password@view_grades_db:3306/viewgradesdb
-      - MYSQL_URI=mysql://user:password@view_grades_db:3306/viewgradesdb
+      - DATABASE_URL=mysql://user:password@view_grades_db:3306/view_grades
+      - MYSQL_URI=mysql://user:password@view_grades_db:3306/view_grades
       - RABBITMQ_EXCHANGE=clearSky.events
       - RABBITMQ_ROUTING_KEY=postgrades.view
       - RABBITMQ_GET_GRADES_KEY=view.avail
