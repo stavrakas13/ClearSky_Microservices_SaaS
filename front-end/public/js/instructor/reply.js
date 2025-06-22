@@ -1,5 +1,5 @@
 // public/js/instructor/reply.js
-import { flash } from '../script.js';
+import { flash } from '../../script.js';
 import { postInstructorReply } from '../../api/instructor.js';
 
 const form = document.querySelector('#instructor-reply-form');

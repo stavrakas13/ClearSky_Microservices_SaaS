@@ -1,5 +1,5 @@
 // public/js/instructor/review-list.js
-import { flash } from '../script.js';
+import { flash } from '../../script.js';
 import { getPendingReviews } from '../../api/instructor.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
