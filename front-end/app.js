@@ -18,7 +18,7 @@ const API_BASE        =
 
 const GOOGLE_AUTH_URL =
   process.env.GOOGLE_AUTH_URL ||
-  'http://localhost:8086';    // your google_auth_service
+  'http://google_auth_service:8086';    // Use Docker service name
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1)  3rd-party middleware
@@ -62,13 +62,52 @@ app.set('views', path.join(__dirname, 'views'));
 //    Forward front-end `/auth/google/...` to your google_auth_service.
 // ─────────────────────────────────────────────────────────────────────────────
 app.get('/auth/google/login', (req, res) => {
-  const role = req.query.role || 'student';
-  res.redirect(`${GOOGLE_AUTH_URL}/auth/google/login?role=${role}`);
+  const role = req.query.role || 'institution_representative';
+  // For Docker, we need to redirect to the external URL
+  const externalGoogleAuthUrl = process.env.GOOGLE_AUTH_EXTERNAL_URL || 'http://localhost:8086';
+  res.redirect(`${externalGoogleAuthUrl}/auth/google/login?role=${role}`);
 });
 
+// Handle successful Google login callback
 app.get('/auth/google/callback', (req, res) => {
-  // After Google sets the cookie, redirect back to home (or wherever you like)
-  res.redirect('/');
+  // This route is called when Google Auth Service redirects back
+  // The JWT should already be in a cookie set by Google Auth Service
+  
+  // Check if we have a JWT cookie
+  const token = req.cookies.token;
+  if (token) {
+    // You might want to validate the token here
+    // For now, we'll trust it and redirect based on role
+    res.redirect('/?google_login=success');
+  } else {
+    res.redirect('/login?error=google_login_failed');
+  }
+});
+
+// Add middleware to check for Google login and set session
+app.use((req, res, next) => {
+  // Check for JWT cookie and google_login parameter
+  if (req.query.google_login === 'success' && req.cookies.token && !req.session.user) {
+    // This is a Google login callback, we should validate the JWT and set session
+    // For now, we'll extract basic info from the URL path to set session
+    const path = req.path;
+    let role = 'institution_representative';
+    
+    if (path.startsWith('/institution')) {
+      role = 'institution_representative';
+    } else if (path.startsWith('/instructor')) {
+      role = 'instructor';
+    } else if (path.startsWith('/student')) {
+      role = 'student';
+    }
+    
+    // Set session for Google user
+    req.session.user = {
+      username: 'google_user', // You might want to decode the JWT to get actual username
+      role: role
+    };
+  }
+  next();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

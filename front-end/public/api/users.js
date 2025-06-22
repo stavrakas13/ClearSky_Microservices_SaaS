@@ -39,9 +39,13 @@ export const changePassword = ({ username, old_password, new_password }) =>
 /**
  * Login via Google token.
  * @param {string} token  Google ID token
+ * @param {string} role   User role (optional)
  */
-export const googleLoginUser = token =>
+export const googleLoginUser = (token, role = 'institution_representative') =>
   request('/user/google-login', {
     method: 'POST',
-    body  : { token }
+    body  : { token, role }
+  }).then(response => {
+    if (response.token) localStorage.setItem('jwt', response.token);
+    return response;
   });

@@ -5,6 +5,7 @@ go 1.24
 require (
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.3.0
+	github.com/joho/godotenv v1.5.1
 	github.com/rabbitmq/amqp091-go v1.10.0
 	golang.org/x/oauth2 v0.29.0
 	gorm.io/driver/sqlite v1.5.7
