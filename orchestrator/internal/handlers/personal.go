@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"orchestrator/internal/middleware"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -53,18 +54,24 @@ func ForwardToView(ch *amqp.Channel, fileData []byte, filename string) {
 }
 
 func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
-	log.Println("[HandleGetGradesByAM] → entered")
+	log.Println("[HandleGetPersonalGrades] → entered")
 
-	// 1. Bind request
-	var req struct {
-		AM string `json:"AM" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[HandleGetGradesByAM] ❌ bind error: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing or invalid AM"})
+	// Get student_id from JWT context using middleware helper
+	studentID := middleware.GetStudentID(c)
+	if studentID == "" {
+		log.Printf("[HandleGetPersonalGrades] ❌ student ID not found in context")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Student ID is required. Please ensure you're logged in as a student."})
 		return
 	}
-	log.Printf("[HandleGetGradesByAM] 📥 request for AM: %s", req.AM)
+
+	log.Printf("[HandleGetPersonalGrades] 📥 request for student_id: %s", studentID)
+
+	// Build request with student_id from JWT
+	req := struct {
+		StudentID string `json:"student_id"`
+	}{
+		StudentID: studentID,
+	}
 
 	// 2. Declare reply queue
 	replyQ, err := ch.QueueDeclare(
@@ -124,8 +131,7 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 
 			var gradesResp struct {
 				Status string        `json:"status"`
-				Data   []interface{} `json:"data"` // Use appropriate struct if you know the shape
-				Error  string        `json:"error,omitempty"`
+				Data   []interface{} `json:"data"`
 			}
 
 			if err := json.Unmarshal(d.Body, &gradesResp); err != nil {

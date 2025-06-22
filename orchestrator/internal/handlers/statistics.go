@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"orchestrator/internal/middleware"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,22 @@ func randomCorrelationID(n int) (string, error) {
 
 // HandleSubmissionLogs asks the JS microservice for all submission logs
 func HandleSubmissionLogs(c *gin.Context, ch *amqp.Channel) {
+	// Get user context from JWT using middleware helpers
+	role := middleware.GetRole(c)
+	studentID := middleware.GetStudentID(c)
+	userID := middleware.GetUserID(c)
+
+	// Build request with user context
+	requestPayload := map[string]interface{}{
+		"role":    role,
+		"user_id": userID,
+	}
+
+	// Add student_id for student users
+	if role == "student" && studentID != "" {
+		requestPayload["student_id"] = studentID
+	}
+
 	// 1) Declare a temporary reply queue
 	replyQ, err := ch.QueueDeclare(
 		"",    // let RabbitMQ generate a random name
@@ -68,6 +85,7 @@ func HandleSubmissionLogs(c *gin.Context, ch *amqp.Channel) {
 	}
 
 	// 3) Publish the request to the same exchange/routing key your JS service listens on
+	body, _ := json.Marshal(requestPayload)
 	if err := ch.Publish(
 		"clearSky.events", // RABBITMQ_EXCHANGE
 		"stats.avail",     // RABBITMQ_SEND_AVAIL_KEY
@@ -76,7 +94,7 @@ func HandleSubmissionLogs(c *gin.Context, ch *amqp.Channel) {
 			ContentType:   "application/json",
 			CorrelationId: corrID,
 			ReplyTo:       replyQ.Name,
-			Body:          []byte(`{}`), // or include filters in the JSON body if you want
+			Body:          body,
 		},
 	); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "publish failed: " + err.Error()})
@@ -263,4 +281,32 @@ func HandleGetGrades(ch *amqp.Channel) gin.HandlerFunc {
 			}
 		}
 	}
+}
+
+// Add helper functions
+func GetRole(c *gin.Context) string {
+	if role, exists := c.Get("role"); exists && role != nil {
+		if str, ok := role.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+func GetStudentID(c *gin.Context) string {
+	if studentID, exists := c.Get("student_id"); exists && studentID != nil {
+		if str, ok := studentID.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+func GetUserID(c *gin.Context) string {
+	if userID, exists := c.Get("user_id"); exists && userID != nil {
+		if str, ok := userID.(string); ok {
+			return str
+		}
+	}
+	return ""
 }

@@ -3,11 +3,12 @@ package rabbitmq
 import (
 	"context"
 	"encoding/json"
+	"google_auth_service/database"
+	"google_auth_service/utils"
 	"log"
 	"net/http"
 	"os"
-
-	"google_auth_service/utils"
+	"strconv"
 
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -17,13 +18,16 @@ import (
 type GoogleAuthRequest struct {
 	Type  string `json:"type"`
 	Token string `json:"token"`
+	Role  string `json:"role,omitempty"`
 }
 
 type GoogleAuthResponse struct {
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
-	Token   string `json:"token,omitempty"`
-	Email   string `json:"email,omitempty"`
+	Status    string `json:"status"`
+	Message   string `json:"message,omitempty"`
+	Token     string `json:"token,omitempty"`
+	Email     string `json:"email,omitempty"`
+	Role      string `json:"role,omitempty"`
+	StudentID string `json:"student_id,omitempty"`
 }
 
 func StartGoogleAuthConsumer() {
@@ -61,17 +65,53 @@ func StartGoogleAuthConsumer() {
 			if err := json.Unmarshal(d.Body, &req); err != nil {
 				continue
 			}
+
 			resp := GoogleAuthResponse{}
 			email, err := verifyGoogleToken(req.Token)
 			if err != nil {
 				resp.Status = "error"
 				resp.Message = "Invalid Google token"
 			} else {
-				token, _ := utils.GenerateJWT(uuid.NewString(), email, "student")
+				// Find or create user with proper student_id handling
+				var user database.User
+				result := database.DB.First(&user, "email = ?", email)
+
+				role := req.Role
+				if role == "" {
+					role = "student"
+				}
+
+				var studentID string
+				if result.Error != nil {
+					// Create new user
+					if role == "student" {
+						studentID = generateStudentID()
+					}
+					user = database.User{
+						Email:     email,
+						Role:      role,
+						StudentID: studentID,
+						Provider:  "google",
+					}
+					database.DB.Create(&user)
+				} else {
+					studentID = user.StudentID
+					if role == "student" && studentID == "" {
+						studentID = generateStudentID()
+						user.StudentID = studentID
+						database.DB.Save(&user)
+					}
+				}
+
+				userIDStr := strconv.Itoa(int(user.ID))
+				token, _ := utils.GenerateJWT(userIDStr, email, role, studentID)
 				resp.Status = "ok"
 				resp.Token = token
 				resp.Email = email
+				resp.Role = role
+				resp.StudentID = studentID
 			}
+
 			body, _ := json.Marshal(resp)
 			if d.ReplyTo != "" && d.CorrelationId != "" {
 				ch.Publish(
@@ -85,6 +125,11 @@ func StartGoogleAuthConsumer() {
 			}
 		}
 	}()
+}
+
+// generateStudentID creates a unique student ID
+func generateStudentID() string {
+	return "STU" + uuid.New().String()[:8]
 }
 
 // Helper to verify Google token and extract email
