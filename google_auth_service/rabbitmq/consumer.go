@@ -31,10 +31,10 @@ type GoogleAuthResponse struct {
 }
 
 var allowedEmailsConsumer = map[string]bool{
-	"your.actual.email@gmail.com": true,
-	"admin@yourcompany.com":       true,
-	"manager@yourcompany.com":     true,
-	"another.user@example.com":    true,
+	"dimitris.thiv@gmail.com":   true,
+	"dimliakis2001@gmail.com":   true,
+	"rostav55@gmail.com":        true,
+	"anastasvasilis4@gmail.com": true,
 }
 
 func StartGoogleAuthConsumer() {

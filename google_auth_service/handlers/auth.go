@@ -21,10 +21,10 @@ var (
 	oauthConfig *oauth2.Config
 	// Define specific allowed emails only - replace with your actual emails
 	allowedEmails = map[string]bool{
-		"your.actual.email@gmail.com": true,
-		"admin@yourcompany.com":       true,
-		"manager@yourcompany.com":     true,
-		"another.user@example.com":    true,
+		"dimitris.thiv@gmail.com":   true,
+		"dimliakis2001@gmail.com":   true,
+		"rostav55@gmail.com":        true,
+		"anastasvasilis4@gmail.com": true,
 	}
 )
 
