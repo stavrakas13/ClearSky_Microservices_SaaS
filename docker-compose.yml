@@ -281,7 +281,7 @@ services:
     image: mysql:8.0
     restart: always
     environment:
-      - MYSQL_URI=mysql://user:password@mysql:3306/stats
+      - MYSQL_URI=mysql://user:password@stats_db:3306/stats
       - MYSQL_ROOT_PASSWORD=root
       - MYSQL_DATABASE=stats
       - MYSQL_USER=user
@@ -320,7 +320,7 @@ services:
     image: mysql:8.0
     restart: always
     environment:
-      - MYSQL_URI=mysql://user:password@mysql:3306/view_grades
+      - MYSQL_URI=mysql://user:password@view_grades_db:3306/view_grades
       - MYSQL_ROOT_PASSWORD=root
       - MYSQL_DATABASE=view_grades
       - MYSQL_USER=user
