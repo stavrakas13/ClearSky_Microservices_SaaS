@@ -263,7 +263,7 @@ services:
       - RABBITMQ_URI=amqp://rabbitmq:5672
       - RABBITMQ_EXCHANGE=clearSky.events
       - RABBITMQ_ROUTING_KEY=postgrades.final
-      - RABBITMQ_CREDIT_INCR_KEY=credits.incr
+      - RABBITMQ_CREDIT_INCR_KEY=incr.credits
     networks:
       - clearSky-net
 
