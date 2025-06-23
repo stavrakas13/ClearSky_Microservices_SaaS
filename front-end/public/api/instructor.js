@@ -28,10 +28,22 @@ const prune = (obj = {}) =>
  * @returns {Promise<Array>}
  */
 export const getPendingReviews = async (filters = {}) => {
+
+  // Log filters before pruning and sending
+  console.log('[DEBUG] 🟡 getPendingReviews called with filters:', filters);
+  const prunedBody = prune(filters);
+
+  // Log pruned body actually sent in request
+  console.log('[DEBUG] 🟡 Pruned request body:', prunedBody);
+
+
   const res = await request('/instructor/review-list', {
     method: 'PATCH',
     body: prune(filters)           // <-- ⬅⬅⬅  IMPORTANT LINE
   });
+  
+  console.log('[DEBUG] 🟡 Response from /instructor/review-list:', res);
+
   return res?.data?.data ?? res?.data ?? res;
 };
 

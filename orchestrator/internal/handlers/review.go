@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
@@ -15,18 +17,18 @@ import (
 
 // helperRequest sends the payload to the given routing key on ExchangeKey and waits for a JSON response
 func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[string]interface{}, error) {
-	log.Printf("helperRequest: routingKey=%s, payload=%s", routingKey, payload)
-	
+	log.Printf("[DEBUG] 🟡 helperRequest: routingKey=%s, payload=%s", routingKey, payload)
+
 	corrID := "abc123"
 	replyQueue, err := ch.QueueDeclare("", false, true, true, false, nil)
 	if err != nil {
-		log.Printf("helperRequest: QueueDeclare error: %v", err)
+		log.Printf("[DEBUG] 🟡 helperRequest: QueueDeclare error: %v", err)
 		return nil, err
 	}
 
 	msgs, err := ch.Consume(replyQueue.Name, "", true, false, false, false, nil)
 	if err != nil {
-		log.Printf("helperRequest: Consume error: %v", err)
+		log.Printf("[DEBUG] 🟡 helperRequest: Consume error: %v", err)
 		return nil, err
 	}
 
@@ -43,7 +45,7 @@ func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[str
 		},
 	)
 	if err != nil {
-		log.Printf("helperRequest: Publish error: %v", err)
+		log.Printf("[DEBUG] 🟡 helperRequest: Publish error: %v", err)
 		return nil, err
 	}
 
@@ -55,13 +57,13 @@ func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[str
 				var response map[string]interface{}
 				err := json.Unmarshal(msg.Body, &response)
 				if err != nil {
-					log.Printf("helperRequest: Unmarshal error: %v", err)
+					log.Printf("[DEBUG] 🟡 helperRequest: Unmarshal error: %v", err)
 				}
-				log.Printf("helperRequest: received response: %+v", response)
+				log.Printf("[DEBUG] 🟡 helperRequest: received response: %+v", response)
 				return response, err
 			}
 		case <-timeout:
-			log.Printf("helperRequest: timeout waiting for response")
+			log.Printf("[DEBUG] 🟡 helperRequest: timeout waiting for response")
 			return nil, errors.New("timeout waiting for response")
 		}
 	}
@@ -224,18 +226,28 @@ func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 // HandleGetRequestList processes instructor get list of pending requests
 // -> sends 1 event: instructor.getRequestsList
 func HandleGetRequestList(c *gin.Context, ch *amqp.Channel) {
-	log.Printf("HandleGetRequestList invoked")
+	log.Printf("[DEBUG] 🟡 HandleGetRequestList invoked")
+
+	// Log raw JSON body from request
+	bodyBytes, err := c.GetRawData()
+	if err != nil {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: failed to read raw body: %v", err)
+	} else {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: raw request body: %s", string(bodyBytes))
+		// After reading raw data, need to reset body for ShouldBindJSON
+		c.Request.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
 
 	var req struct {
 		CourseID   string `json:"course_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("HandleGetRequestList: bind error: %v", err)
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
-	log.Printf("HandleGetRequestList: payload struct %+v", req)
+	log.Printf("[DEBUG] 🟡 HandleGetRequestList: payload struct %+v", req)
 
 	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
@@ -243,14 +255,24 @@ func HandleGetRequestList(c *gin.Context, ch *amqp.Channel) {
 			"course_id":   req.CourseID,
 		},
 	})
+	log.Printf("[DEBUG] 🟡 HandleGetRequestList: sending payload to helperRequest: %s", string(payload))
 
 	responseInstructor, err := helperRequest(ch, "instructor.getRequestsList", payload)
 	if err != nil {
-		log.Printf("HandleGetRequestList: error: %v", err)
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("HandleGetRequestList: responseInstructor %+v", responseInstructor)
+
+	// Log the raw response from helperRequest as JSON
+	respBytes, err := json.Marshal(responseInstructor)
+	if err != nil {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: failed to marshal responseInstructor: %v", err)
+	} else {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: raw response from helperRequest: %s", string(respBytes))
+	}
+
+	log.Printf("[DEBUG] 🟡 HandleGetRequestList: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
 

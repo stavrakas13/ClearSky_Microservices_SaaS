@@ -42,7 +42,7 @@ func Routing(routingKey string, messageBody []byte) (string, error) {
 		return controllers.PostReply(msg.Body)
 
 	case "instructor.getRequestsList":
-		return controllers.GetReviewReqeustList(msg.Body)
+		return controllers.GetReviewRequestList(msg.Body)
 
 	case "instructor.getRequestInfo":
 		return controllers.GetRequestInfo(msg.Body)
