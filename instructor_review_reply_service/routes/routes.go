@@ -50,6 +50,22 @@ func Routing(routingKey string, messageBody []byte) (string, error) {
 	case "instructor.insertStudentRequest":
 		return controllers.InsertStudentRequest(msg.Body)
 
+	// route for updating instructors table
+	/* 	case "instructor.addCourse":
+	courseID := msg.Params["course_id"]         // COURSE NAME FROM UPLOAD
+	instructorID := msg.Params["instructor_id"] // LOGGED-IN INSTRUCTOR FROM JWT
+
+	if courseID == "" || instructorID == "" {
+		return "", fmt.Errorf("missing course_id or instructor_id in params")
+	}
+
+	err := controllers.AddCourse(courseID, instructorID)
+	if err != nil {
+		return "", fmt.Errorf("failed to add course: %w", err)
+	}
+
+	return `{"message": "Course successfully added"}`, nil */
+
 	default:
 		return "", fmt.Errorf("unknown routing key: %s", routingKey)
 	}

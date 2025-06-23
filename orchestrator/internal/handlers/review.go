@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
@@ -180,8 +178,15 @@ func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
 func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 	log.Printf("HandlePostResponse invoked")
 
+	// get user name from jwt
+	username := middleware.GetUsername(c)
+	if username == "" {
+		log.Printf("[DEBUG] 🟡 HandlePostResponse: missing username in token")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "HandlePostResponse Missing instructor username in token"})
+		return
+	}
+
 	var req struct {
-		CourseID               string `json:"course_id"`
 		UserID                 string `json:"user_id"`
 		ExamPeriod             string `json:"exam_period"`
 		InstructorReplyMessage string `json:"instructor_reply_message"`
@@ -197,7 +202,7 @@ func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period":              req.ExamPeriod,
-			"course_id":                req.CourseID,
+			"username":                 username,
 			"user_id":                  req.UserID,
 			"instructor_reply_message": req.InstructorReplyMessage,
 			"instructor_action":        req.InstructorAction,
@@ -228,51 +233,38 @@ func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 func HandleGetRequestList(c *gin.Context, ch *amqp.Channel) {
 	log.Printf("[DEBUG] 🟡 HandleGetRequestList invoked")
 
-	// Log raw JSON body from request
-	bodyBytes, err := c.GetRawData()
-	if err != nil {
-		log.Printf("[DEBUG] 🟡 HandleGetRequestList: failed to read raw body: %v", err)
-	} else {
-		log.Printf("[DEBUG] 🟡 HandleGetRequestList: raw request body: %s", string(bodyBytes))
-		// After reading raw data, need to reset body for ShouldBindJSON
-		c.Request.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
-	}
-
-	var req struct {
-		CourseID   string `json:"course_id"`
-		ExamPeriod string `json:"exam_period"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[DEBUG] 🟡 HandleGetRequestList: bind error: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+	// get user name from jwt
+	username := middleware.GetUsername(c)
+	if username == "" {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: missing username in token")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing instructor username in token"})
 		return
 	}
-	log.Printf("[DEBUG] 🟡 HandleGetRequestList: payload struct %+v", req)
 
-	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
+	payload, err := json.Marshal(map[string]interface{}{
 		"body": map[string]interface{}{
-			"exam_period": req.ExamPeriod,
-			"course_id":   req.CourseID,
+			"username": username,
 		},
 	})
+	if err != nil {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: failed to marshal payload: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+
 	log.Printf("[DEBUG] 🟡 HandleGetRequestList: sending payload to helperRequest: %s", string(payload))
 
 	responseInstructor, err := helperRequest(ch, "instructor.getRequestsList", payload)
 	if err != nil {
-		log.Printf("[DEBUG] 🟡 HandleGetRequestList: error: %v", err)
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: error from helperRequest: %v", err)
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "Instructor service timeout or unavailable"})
 		return
 	}
 
-	// Log the raw response from helperRequest as JSON
-	respBytes, err := json.Marshal(responseInstructor)
-	if err != nil {
-		log.Printf("[DEBUG] 🟡 HandleGetRequestList: failed to marshal responseInstructor: %v", err)
-	} else {
-		log.Printf("[DEBUG] 🟡 HandleGetRequestList: raw response from helperRequest: %s", string(respBytes))
-	}
+	// Optional: Validate expected fields in the response (message + data)
+	respBytes, _ := json.Marshal(responseInstructor)
+	log.Printf("[DEBUG] 🟡 HandleGetRequestList: response received: %s", string(respBytes))
 
-	log.Printf("[DEBUG] 🟡 HandleGetRequestList: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
 
@@ -310,3 +302,47 @@ func HandleGetRequestInfo(c *gin.Context, ch *amqp.Channel) {
 	log.Printf("HandleGetRequestInfo: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
+
+// HandleAddCourse sends a message to the instructor services queue
+// with course_id and user_id when the instructor calls upload_init (or similar)
+/* func HandleAddCourse(c *gin.Context, ch *amqp.Channel) {
+	log.Printf("HandleAddCourse invoked")
+
+	// take instructor's id from JWT.
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		log.Printf("HandleAddCourse: user_id missing from context")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user_id is required"})
+		return
+	}
+
+	// Take course_id from ??
+	var req struct {
+		CourseID string `json:"course_id" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandleAddCourse: bind error: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "course_id is required"})
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
+		"params": map[string]string{
+			"course_id": req.CourseID,
+			"user_id":   userID,
+		},
+		"body": map[string]interface{}{},
+	})
+
+	response, err := helperRequest(ch, "instructor.addCourse", payload)
+	if err != nil {
+		log.Printf("HandleAddCourse: error sending message: %v", err)
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
+		return
+	}
+
+	log.Printf("HandleAddCourse: response: %+v", response)
+	c.JSON(http.StatusOK, gin.H{"data": response})
+}
+*/

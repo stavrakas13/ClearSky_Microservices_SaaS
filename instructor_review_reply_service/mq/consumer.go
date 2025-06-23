@@ -24,6 +24,7 @@ func StartConsumer() {
 		"instructor.getRequestsList",
 		"instructor.getRequestInfo",
 		"instructor.insertStudentRequest",
+		"instructor.addCourse",
 	}
 
 	// declare direct exchange for event routing
