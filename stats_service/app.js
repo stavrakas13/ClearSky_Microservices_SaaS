@@ -214,24 +214,32 @@ if (missingVars.length > 0) {
     }, { noAck: false });
   }
 
+// -- histogram helper with dynamic upper‐bound on bins --
 async function fetchHistogram(field, connection, { classTitle, declarationPeriod }) {
-  // round the float into integer bins 0–10
+  // round the float into integer bins
   const sql = `
     SELECT
-      ROUND(\`${field}\`) AS grade,
-      COUNT(*)         AS count
+      ROUND(\`${field}\`) AS value,
+      COUNT(*)           AS count
     FROM grading
-    WHERE classTitle     = ?
+    WHERE classTitle       = ?
       AND declarationPeriod = ?
     GROUP BY ROUND(\`${field}\`)
     ORDER BY ROUND(\`${field}\`)
   `;
   const [rows] = await connection.execute(sql, [ classTitle, declarationPeriod ]);
 
-  // build bins 0 through 10 and map counts
-  const categories = Array.from({ length: 11 }, (_, i) => i);
+  // if it's the overall 'grade', force 0–10; otherwise use max rounded value
+  const maxBin = field === 'grade'
+    ? 10
+    : rows.reduce((max, r) => Math.max(max, +r.value), 0);
+
+  // build bins 0 through maxBin
+  const categories = Array.from({ length: maxBin + 1 }, (_, i) => i);
+
+  // map counts into those bins
   const data = categories.map(i => {
-    const found = rows.find(r => +r.grade === i);
+    const found = rows.find(r => +r.value === i);
     return found ? +found.count : 0;
   });
 
@@ -239,8 +247,7 @@ async function fetchHistogram(field, connection, { classTitle, declarationPeriod
 }
 
 
-
-// … inside your async IIFE, after the submission-logs block:
+// -- RabbitMQ consumer that calls fetchHistogram for each dimension --
 {
   const q3 = 'get.grades';
   await channel.assertQueue(q3, { durable: false, exclusive: false, autoDelete: false });
@@ -261,17 +268,17 @@ async function fetchHistogram(field, connection, { classTitle, declarationPeriod
       return channel.nack(msg, false, false);
     }
 
-    const {declarationPeriod, classTitle } = params;
+    const { declarationPeriod, classTitle } = params;
     if (!declarationPeriod || !classTitle) {
-      const missing = ['declarationPeriod','classTitle']
+      const missing = ['declarationPeriod', 'classTitle']
         .filter(k => !params[k]).join(', ');
       reply({ status: 'error', message: `Missing fields: ${missing}` });
       return channel.ack(msg);
     }
 
     try {
-      // Build histograms for total grade + Q1–Q4
-      const dims = ['grade','Q1','Q2','Q3','Q4', 'Q5', 'Q6','Q7','Q8','Q9','Q10'];
+      // Build histograms for total grade + Q1–Q10
+      const dims = ['grade', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'Q9', 'Q10'];
       const result = {};
       for (let dim of dims) {
         result[dim] = await fetchHistogram(dim, connection, params);

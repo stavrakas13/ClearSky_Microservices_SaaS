@@ -1,22 +1,38 @@
-<!DOCTYPE html><html lang="en"><head>
-  <%- include('../partials/head',{title}) %>
-</head><body>
-  <%- include('../partials/navbar',{user}) %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head',{ title: 'Course Statistics' }) %>
+  <!-- Add ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+  <%- include('../partials/navbar',{ user }) %>
   <main class="container">
     <%- include('../partials/header') %>
     <div class="panel">
-      <div class="panel-header">Available course statistics
-        <button class="button button--secondary" style="float:right;">filter my courses</button>
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Available course statistics</span>
+        <a href="/instructor/post-initial" class="button button--secondary">My Courses</a>
       </div>
       <table>
-        <thead><tr><th>course name</th><th>exam period</th><th>initial submission</th><th>final submission</th></tr></thead>
-        <tbody><tr><td>physics</td><td>fall 2024</td><td>2025‑02‑22</td><td>2025‑02‑28</td></tr></tbody>
+        <thead>
+          <tr>
+            <th>Course Name</th>
+            <th>Exam Period</th>
+            <th>Initial Submission</th>
+            <th>Final Submission</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populated by JS -->
+        </tbody>
       </table>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.6rem;margin-top:1rem;">
-        <% for(let i=0;i<6;i++){ %>
-          <div style="border:1px solid #d0d7de;height:120px;">chart</div>
-        <% } %>
-      </div>
     </div>
+    <div id="stats-charts" class="grid-stats">
+      <!-- JS will render charts here -->
+    </div>
+    <%- include('../partials/messageBox') %>
   </main>
-</body></html>
+  <script type="module" src="/js/student/statistics.js"></script>
+</body>
+</html>

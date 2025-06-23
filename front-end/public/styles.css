@@ -163,6 +163,17 @@ input, select, textarea {
   border: 1px solid #ccd1d6;
   border-radius: 4px;
 }
+/* ─── statistics grid ─── */
+.grid-stats {
+  margin-top: 1rem;
+}
+
+/* The inner wrapper that actually lays out your charts */
+.grid-stats-inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.2rem;
+}
 
 /* If you have additional .navbar__* rules, leave them intact below */
 .navbar__brand a { color: #fff; font-weight: 600; text-decoration: none; font-size: 1.2rem }

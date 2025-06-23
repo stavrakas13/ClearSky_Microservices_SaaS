@@ -1,15 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <%- include('../partials/head', { title: 'Course Statistics' }) %>
-  <!-- ECharts first -->
+  <%- include('../partials/head',{ title: 'Course Statistics' }) %>
+  <!-- Add ECharts CDN -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
-  <%- include('../partials/navbar', { user }) %>
+  <%- include('../partials/navbar',{ user }) %>
   <main class="container">
     <%- include('../partials/header') %>
-
     <div class="panel">
       <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
         <span>Available course statistics</span>
@@ -29,16 +28,11 @@
         </tbody>
       </table>
     </div>
-
-    <div id="stats-charts" class="grid-stats"
-         style="display:flex;flex-wrap:wrap;gap:1rem;margin-top:1rem;">
+    <div id="stats-charts" class="grid-stats">
       <!-- JS will render charts here -->
     </div>
-
     <%- include('../partials/messageBox') %>
   </main>
-
-  <!-- only load your module (which itself `import`s flash() from script.js) -->
   <script type="module" src="/js/student/statistics.js"></script>
 </body>
 </html>
