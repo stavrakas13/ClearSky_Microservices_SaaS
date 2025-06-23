@@ -2,24 +2,24 @@
 import { request } from './_request.js';
 
 /**
- * Fetch all courses & periods for the logged-in student.
- * (orchestrator: GET /personal/grades → returns every submission log)
+ * Fetch all past/future courses & periods for the logged-in student.
+ * Orchestrator: GET /personal/grades → { status, data: […] }
  */
-export const getStudentCourses = () =>
-  request('/personal/grades');
+export const getStudentCourses = async () => {
+  const { data } = await request('/personal/grades');
+  return Array.isArray(data) ? data : [];
+};
 
 /**
- * Fetch personal grades for a given course and (optionally) exam period.
- * If exam_period is omitted the backend will return the most recent one.
- *
- * @param {{ course_id: string|number, exam_period?: string }} params
+ * Fetch the grade entries for a given course & exam period.
+ * Orchestrator: GET /personal/grades?course_id=…&exam_period=…
  */
-export const getPersonalGrades = ({ course_id, exam_period }) => {
+export const getPersonalGrades = async ({ course_id, exam_period }) => {
   const qs = new URLSearchParams();
-  if (course_id !== undefined && course_id !== null) qs.append('course_id', course_id);
-  if (exam_period !== undefined && exam_period !== null) qs.append('exam_period', exam_period);
+  if (course_id)   qs.append('course_id',   course_id);
+  if (exam_period) qs.append('exam_period', exam_period);
 
-  // empty query-string → “/personal/grades”
   const suffix = qs.toString() ? `?${qs}` : '';
-  return request(`/personal/grades${suffix}`);
+  const { data } = await request(`/personal/grades${suffix}`);
+  return Array.isArray(data) ? data : [];
 };

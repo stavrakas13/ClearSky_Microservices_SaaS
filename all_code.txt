@@ -333,10 +333,12 @@ import { request } from './_request.js';
 
 /**
  * Fetch all courses & periods for the logged-in student.
- * (orchestrator: GET /stats/available → returns every submission log)
+ * (orchestrator: GET /personal/grades → returns { status, data: [...] })
  */
-export const getStudentCourses = () =>
-  request('/stats/available');
+export const getStudentCourses = async () => {
+  const { data } = await request('/personal/grades');
+  return data;
+};
 
 /**
  * Fetch personal grades for a given course and (optionally) exam period.
@@ -344,16 +346,16 @@ export const getStudentCourses = () =>
  *
  * @param {{ course_id: string|number, exam_period?: string }} params
  */
-export const getPersonalGrades = ({ course_id, exam_period }) => {
+export const getPersonalGrades = async ({ course_id, exam_period }) => {
   const qs = new URLSearchParams();
-  if (course_id !== undefined && course_id !== null) qs.append('course_id', course_id);
-  if (exam_period !== undefined && exam_period !== null) qs.append('exam_period', exam_period);
+  if (course_id   != null) qs.append('course_id',   course_id);
+  if (exam_period != null) qs.append('exam_period', exam_period);
 
   // empty query-string → “/personal/grades”
   const suffix = qs.toString() ? `?${qs}` : '';
-  return request(`/personal/grades${suffix}`);
+  const { data } = await request(`/personal/grades${suffix}`);
+  return data;
 };
-
 ===== front-end/public/api/_request.js =====
 // front-end/public/api/_request.js
 
@@ -892,21 +894,24 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 
   try {
-    const grades = await getPersonalGrades({ course_id, exam_period });
+    // Fetch an array of grade entries
+    const gradesArray = await getPersonalGrades({ course_id, exam_period });
 
     const tbody = document.querySelector('table tbody');
-    tbody.innerHTML = Object.entries(grades)
-      .map(([component, score]) => `
+    // Map each grade entry to a table row
+    tbody.innerHTML = gradesArray
+      .map(g => `
         <tr>
-          <td>${component}</td>
-          <td>${score}</td>
+          <td>${g.declarationPeriod}</td>
+          <td>${g.classTitle}</td>
+          <td>${g.grade}</td>
         </tr>
-      `).join('');
+      `)
+      .join('');
   } catch (err) {
     flash(err.message);
   }
 });
-
 ===== front-end/public/js/student/review-request.js =====
 // front-end/public/js/student/review-request.js
 import { flash } from '../../script.js';
@@ -2696,6 +2701,13 @@ import (
 
 var (
 	oauthConfig *oauth2.Config
+	// Define specific allowed emails only - replace with your actual emails
+	allowedEmails = map[string]bool{
+		"your.actual.email@gmail.com": true,
+		"admin@yourcompany.com":       true,
+		"manager@yourcompany.com":     true,
+		"another.user@example.com":    true,
+	}
 )
 
 func init() {
@@ -2733,6 +2745,11 @@ func GoogleLoginHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
+// Helper function to check if email is allowed - simplified to use only hardcoded emails
+func isEmailAllowed(email string) bool {
+	return allowedEmails[email]
+}
+
 // Handles Google's callback and fetches user info
 func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
@@ -2763,13 +2780,20 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	email := userInfo["email"].(string)
+
+	// Validate email is allowed
+	if !isEmailAllowed(email) {
+		http.Error(w, "Access denied: Your email domain is not authorized for this application", http.StatusForbidden)
+		return
+	}
+
 	// derive role from state - default to institution_representative for Google users
 	role := normalizeRole(r.URL.Query().Get("state"))
 	if r.URL.Query().Get("state") == "" {
 		role = "institution_representative"
 	}
 
-	email := userInfo["email"].(string)
 	name := userInfo["name"].(string)
 	picture := userInfo["picture"].(string)
 
@@ -2840,41 +2864,40 @@ func GoogleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		"role":       user.Role,
 		"student_id": user.StudentID,
 	}
+
 	buf, _ := json.Marshal(upsertPayload)
 	http.Post(umsHost+"/upsert", "application/json", bytes.NewBuffer(buf))
 
 	// Redirect to frontend based on user role
+	var redirectPath string
+	switch user.Role {
+	case "student":
+		redirectPath = "/student"
+	case "instructor":
+		redirectPath = "/instructor"
+	case "institution_representative":
+		redirectPath = "/institution"
+	default:
+		redirectPath = "/"
+	}
+
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:3000"
 	}
 
-	var redirectPath string
-	switch user.Role {
-	case "institution_representative":
-		redirectPath = "/institution"
-	case "instructor":
-		redirectPath = "/instructor"
-	case "student":
-		redirectPath = "/student"
-	default:
-		redirectPath = "/"
-	}
-
-	// Redirect to frontend with role-specific path
-	http.Redirect(w, r, frontendURL+redirectPath+"?google_login=success", http.StatusTemporaryRedirect)
+	http.Redirect(w, r, frontendURL+redirectPath, http.StatusSeeOther)
 }
 
 // LogoutHandler διαγράφει το token cookie
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
-	// Για να διαγράψουμε cookie, το κάνουμε expired
 	cookie := http.Cookie{
 		Name:     "token",
 		Value:    "",
 		Path:     "/",
-		MaxAge:   -1, // Λέει στο browser να διαγράψει το cookie αμέσως
+		MaxAge:   -1, // Expire immediately
 		HttpOnly: true,
-		Secure:   false, // Σε HTTPS το κάνεις true
+		Secure:   false, // Set to true in production with HTTPS
 		SameSite: http.SameSiteLaxMode,
 	}
 
@@ -3019,6 +3042,13 @@ type GoogleAuthResponse struct {
 	StudentID string `json:"student_id,omitempty"`
 }
 
+var allowedEmailsConsumer = map[string]bool{
+	"your.actual.email@gmail.com": true,
+	"admin@yourcompany.com":       true,
+	"manager@yourcompany.com":     true,
+	"another.user@example.com":    true,
+}
+
 func StartGoogleAuthConsumer() {
 	url := os.Getenv("RABBITMQ_URL")
 	if url == "" {
@@ -3060,8 +3090,6 @@ func StartGoogleAuthConsumer() {
 		for d := range msgs {
 			var req GoogleAuthRequest
 			if err := json.Unmarshal(d.Body, &req); err != nil {
-				log.Printf("Failed to unmarshal request: %v", err)
-				d.Nack(false, false)
 				continue
 			}
 
@@ -3070,6 +3098,9 @@ func StartGoogleAuthConsumer() {
 			if err != nil {
 				resp.Status = "error"
 				resp.Message = "Invalid Google token"
+			} else if !isEmailAllowed(email) {
+				resp.Status = "error"
+				resp.Message = "Access denied: Email not authorized"
 			} else {
 				// Find or create user with proper role handling
 				var user database.User
@@ -3157,6 +3188,11 @@ func verifyGoogleToken(idToken string) (string, error) {
 		return "", http.ErrNoCookie
 	}
 	return tokenInfo.Email, nil
+}
+
+// Helper function to check if email is allowed
+func isEmailAllowed(email string) bool {
+	return allowedEmailsConsumer[email]
 }
 
 ===== google_auth_service/rabbitmq/publisher.go =====
@@ -4874,10 +4910,12 @@ import (
 // When upload grades, update view grades too.
 
 func ForwardToView(ch *amqp.Channel, fileData []byte, filename string) {
-	log.Println("[ForwardToStatistics] Encoding data for statistics")
+	log.Println("[ForwardToView] Encoding data for VIEWING THEM")
 
 	// Base64 encode the file contents
 	encoded := base64.StdEncoding.EncodeToString(fileData)
+	// Log the encoded payload (optional)
+	log.Printf("[ForwardToView] Payload (base64): %s", encoded)
 
 	// Prepare the persistent message
 	msg := amqp.Publishing{
@@ -4888,21 +4926,21 @@ func ForwardToView(ch *amqp.Channel, fileData []byte, filename string) {
 		Body:         []byte(encoded),
 	}
 
-	log.Println("[ForwardToStatistics] Publishing to postgrades.statistics")
+	log.Println("[ForwardToView] Publishing to postgrades.VIEW")
 
 	// Publish to exchange with the durable routing key
 	err := ch.Publish(
 		"clearSky.events", // 🔁 Exchange name (must exist and be durable)
 		"postgrades.view", // 🎯 Routing key (must match queue binding)
-		false,             // mandatory
-		false,             // immediate
+		false,              // mandatory
+		false,              // immediate
 		msg,
 	)
 
 	if err != nil {
-		log.Printf("[ForwardToStatistics] Failed to publish statistics message: %v\n", err)
+		log.Printf("[ForwardToView] Failed to publish VIEW message: %v\n", err)
 	} else {
-		log.Println("[ForwardToStatistics] Statistics message published successfully")
+		log.Println("[ForwardToView] VIEW message published successfully")
 	}
 }
 
@@ -4917,40 +4955,52 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 		return
 	}
 
-	log.Printf("[HandleGetPersonalGrades] 📥 request for student_id: %s", studentID)
+	log.Printf("[HandleGetPersonalGrades] 📥 Received request for student_id: %s", studentID)
 
 	// Build request with student_id from JWT
 	req := struct {
-		StudentID string `json:"student_id"`
+		StudentID string `json:"AM"`
 	}{
 		StudentID: studentID,
 	}
+	log.Println("[HandleGetPersonalGrades] 🔧 Built request payload")
 
-	// 2. Declare reply queue
+	// Marshal and log the JSON payload
+	body, err := json.Marshal(req)
+	if err != nil {
+		log.Printf("[HandleGetPersonalGrades] ❌ Failed to marshal request: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare request payload"})
+		return
+	}
+	log.Printf("[HandleGetPersonalGrades] Payload: %s", string(body))
+
+	// Declare reply queue
 	replyQ, err := ch.QueueDeclare(
 		"", false, true, true, false, nil,
 	)
 	if err != nil {
-		log.Printf("[HandleGetGradesByAM] ❌ failed to declare reply queue: %v", err)
+		log.Printf("[HandleGetPersonalGrades] ❌ Failed to declare reply queue: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create reply queue"})
 		return
 	}
+	log.Printf("[HandleGetPersonalGrades] ✅ Reply queue declared: %s", replyQ.Name)
 
-	// 3. Start consuming
+	// Start consuming
 	msgs, err := ch.Consume(
 		replyQ.Name, "", true, true, false, false, nil,
 	)
 	if err != nil {
-		log.Printf("[HandleGetGradesByAM] ❌ failed to consume: %v", err)
+		log.Printf("[HandleGetPersonalGrades] ❌ Failed to start consuming: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to consume reply"})
 		return
 	}
+	log.Println("[HandleGetPersonalGrades] 🟢 Started consuming from reply queue")
 
-	// 4. Publish request
+	// Publish request with correlation ID and reply-to
 	corrID := uuid.New().String()
-	body, _ := json.Marshal(req)
+	log.Printf("[HandleGetPersonalGrades] 📦 Publishing message with Correlation ID: %s", corrID)
 	err = ch.Publish(
-		"clearSky.events", // Exchange
+		"clearSky.events",
 		"view.avail",
 		false, false,
 		amqp.Publishing{
@@ -4961,26 +5011,35 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 		},
 	)
 	if err != nil {
-		log.Printf("[HandleGetGradesByAM] ❌ publish failed: %v", err)
+		log.Printf("[HandleGetPersonalGrades] ❌ Publish failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to publish request"})
 		return
 	}
+	log.Println("[HandleGetPersonalGrades] 🚀 Request published successfully")
 
+	// Set timeout for reply
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	log.Println("[HandleGetPersonalGrades] ⏳ Waiting for response...")
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("[HandleGetGradesByAM] ⏰ timeout waiting for reply")
+			log.Println("[HandleGetPersonalGrades] ⏰ Timeout while waiting for reply")
 			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "Service timeout"})
 			return
 
 		case d := <-msgs:
+			log.Printf("[HandleGetPersonalGrades] 📬 Received message with Correlation ID: %s", d.CorrelationId)
+
+			// Ignore messages with wrong correlation ID
 			if d.CorrelationId != corrID {
-				log.Printf("[HandleGetGradesByAM] 🔍 ignoring message with corrID=%s", d.CorrelationId)
+				log.Printf("[HandleGetPersonalGrades] 🔄 Ignoring mismatched Correlation ID: %s", d.CorrelationId)
 				continue
 			}
+
+			// Log raw JSON response payload
+			log.Printf("[HandleGetPersonalGrades] Response payload: %s", string(d.Body))
 
 			var gradesResp struct {
 				Status string        `json:"status"`
@@ -4988,16 +5047,20 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 			}
 
 			if err := json.Unmarshal(d.Body, &gradesResp); err != nil {
-				log.Printf("[HandleGetGradesByAM] ❌ unmarshal failed: %v", err)
+				log.Printf("[HandleGetPersonalGrades] ❌ Failed to unmarshal response: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response format"})
 				return
 			}
 
+			log.Printf("[HandleGetPersonalGrades] ✅ Successfully received response with status: %s", gradesResp.Status)
+
 			statusCode := http.StatusOK
 			if gradesResp.Status != "ok" {
+				log.Printf("[HandleGetPersonalGrades] ⚠️ Non-ok status received: %s", gradesResp.Status)
 				statusCode = http.StatusBadRequest
 			}
 
+			log.Printf("[HandleGetPersonalGrades] 📤 Sending JSON response with status code: %d", statusCode)
 			c.JSON(statusCode, gradesResp)
 			return
 		}
@@ -7219,23 +7282,50 @@ var DB *gorm.DB
 // User represents the user model
 type User struct {
 	gorm.Model
-	Username string
-	Password string
-	Role     string
+	Username  string
+	Password  string
+	Role      string
+	StudentID string `gorm:"unique"` // Add StudentID field
 }
 
 // InitDB initializes the database connection and performs migrations
 func InitDB() {
 	// ...existing DB connection and migrations...
 	DB.AutoMigrate(&User{})
+	seedDefaultUsers()
+}
+
+// seedDefaultUsers ensures default users exist for all roles
+func seedDefaultUsers() {
 	seedAdminUser()
+	seedStudentUser()
+	seedInstructorUser()
 }
 
 // seedAdminUser ensures a default admin exists
 func seedAdminUser() {
 	passHash, _ := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
-	u := User{Username: "admin", Password: string(passHash), Role: "representative"}
+	u := User{Username: "admin", Password: string(passHash), Role: "institution_representative"}
 	DB.FirstOrCreate(&u, User{Username: "admin"})
+}
+
+// seedStudentUser ensures a default student exists
+func seedStudentUser() {
+	passHash, _ := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
+	u := User{
+		Username:  "student",
+		Password:  string(passHash),
+		Role:      "student",
+		StudentID: "03181121",
+	}
+	DB.FirstOrCreate(&u, User{Username: "student"})
+}
+
+// seedInstructorUser ensures a default instructor exists
+func seedInstructorUser() {
+	passHash, _ := bcrypt.GenerateFromPassword([]byte("1234"), bcrypt.DefaultCost)
+	u := User{Username: "instructor", Password: string(passHash), Role: "instructor"}
+	DB.FirstOrCreate(&u, User{Username: "instructor"})
 }
 
 ===== user_management_service/internal/config/config.go =====

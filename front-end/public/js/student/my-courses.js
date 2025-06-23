@@ -1,27 +1,63 @@
 // front-end/public/js/student/my-courses.js
+//
+// Shows all courses for the logged-in student and builds action links
+// that carry ONLY the numeric course_id (e.g. 3205).
+// ────────────────────────────────────────────────────────────────────
 import { flash } from '../../script.js';
 import { getStudentCourses } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const courses = await getStudentCourses();     // API now returns the array directly
+    const courses = await getStudentCourses();         // array from /personal/grades
+    const tbody   = document.querySelector('table tbody');
 
-    const tbody = document.querySelector('table tbody');
-    tbody.innerHTML = courses
-      .map(c => `
-        <tr ${c.status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
-          <td>${c.course_name}</td>
-          <td>${c.exam_period}</td>
-          <td>${c.status}</td>
+    if (!courses.length) {
+      tbody.innerHTML = `
+        <tr><td colspan="4" style="text-align:center;">No courses found.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = courses.map(c => {
+      /* ── 1) Resolve display fields ─────────────────────────────── */
+      const courseName = c.classTitle        ?? c.course_name  ?? '—';
+      const examPeriod = c.declarationPeriod ?? c.exam_period  ?? '—';
+
+      let status = c.status ?? c.grading_status;
+      if (typeof status === 'number') status = status === 0 ? 'open' : 'closed';
+      if (!status) status = '—';
+
+      /* ── 2) Derive a clean numeric course-id for links ─────────── */
+      const rawId = c.course_id ?? c.id ?? courseName;  // whatever we’ve got
+      const numericId =
+        String(rawId).match(/\((\d+)\)/)?.[1]   // digits inside ( ... )
+        || String(rawId).replace(/\D/g, '')     // else keep any digits
+        || encodeURIComponent(rawId);           // fallback
+
+      /* ── 3) Build row ──────────────────────────────────────────── */
+      return `
+        <tr ${status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
+          <td>${courseName}</td>
+          <td>${examPeriod}</td>
+          <td>${status}</td>
           <td>
-            <a href="/student/personal?course=${c.id}&period=${encodeURIComponent(c.exam_period)}" class="button">View grades</a>
-            <a href="/student/request?course=${c.id}&period=${encodeURIComponent(c.exam_period)}"  class="button${c.status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
-            <a href="/student/status?course=${c.id}&period=${encodeURIComponent(c.exam_period)}"   class="button${c.status === 'open' ? ' button--secondary' : ''}">Status</a>
+            <a class="button"
+               href="/student/personal?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
+              View grades
+            </a>
+
+            <a class="button${status !== 'open' ? ' button--secondary' : ''}"
+               href="/student/request?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
+              Ask review
+            </a>
+
+            <a class="button${status === 'open' ? ' button--secondary' : ''}"
+               href="/student/status?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
+              Status
+            </a>
           </td>
-        </tr>
-      `)
-      .join('');
+        </tr>`;
+    }).join('');
   } catch (err) {
-    flash(err.message);
+    flash(err.message || 'Failed to load courses');
   }
 });

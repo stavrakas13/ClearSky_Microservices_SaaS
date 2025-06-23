@@ -21,10 +21,12 @@ import (
 // When upload grades, update view grades too.
 
 func ForwardToView(ch *amqp.Channel, fileData []byte, filename string) {
-	log.Println("[ForwardToStatistics] Encoding data for VIEWING THEM")
+	log.Println("[ForwardToView] Encoding data for VIEWING THEM")
 
 	// Base64 encode the file contents
 	encoded := base64.StdEncoding.EncodeToString(fileData)
+	// Log the encoded payload (optional)
+	log.Printf("[ForwardToView] Payload (base64): %s", encoded)
 
 	// Prepare the persistent message
 	msg := amqp.Publishing{
@@ -35,21 +37,21 @@ func ForwardToView(ch *amqp.Channel, fileData []byte, filename string) {
 		Body:         []byte(encoded),
 	}
 
-	log.Println("[ForwardToVIEW] Publishing to postgrades.VIEW")
+	log.Println("[ForwardToView] Publishing to postgrades.VIEW")
 
 	// Publish to exchange with the durable routing key
 	err := ch.Publish(
 		"clearSky.events", // 🔁 Exchange name (must exist and be durable)
 		"postgrades.view", // 🎯 Routing key (must match queue binding)
-		false,             // mandatory
-		false,             // immediate
+		false,              // mandatory
+		false,              // immediate
 		msg,
 	)
 
 	if err != nil {
-		log.Printf("[ForwardToVIEW] Failed to publish VIEW message: %v\n", err)
+		log.Printf("[ForwardToView] Failed to publish VIEW message: %v\n", err)
 	} else {
-		log.Println("[ForwardToVIEW] VIEW message published successfully")
+		log.Println("[ForwardToView] VIEW message published successfully")
 	}
 }
 
@@ -74,6 +76,15 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 	}
 	log.Println("[HandleGetPersonalGrades] 🔧 Built request payload")
 
+	// Marshal and log the JSON payload
+	body, err := json.Marshal(req)
+	if err != nil {
+		log.Printf("[HandleGetPersonalGrades] ❌ Failed to marshal request: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare request payload"})
+		return
+	}
+	log.Printf("[HandleGetPersonalGrades] Payload: %s", string(body))
+
 	// Declare reply queue
 	replyQ, err := ch.QueueDeclare(
 		"", false, true, true, false, nil,
@@ -96,9 +107,8 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 	}
 	log.Println("[HandleGetPersonalGrades] 🟢 Started consuming from reply queue")
 
-	// Publish request
+	// Publish request with correlation ID and reply-to
 	corrID := uuid.New().String()
-	body, _ := json.Marshal(req)
 	log.Printf("[HandleGetPersonalGrades] 📦 Publishing message with Correlation ID: %s", corrID)
 	err = ch.Publish(
 		"clearSky.events",
@@ -133,10 +143,14 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 		case d := <-msgs:
 			log.Printf("[HandleGetPersonalGrades] 📬 Received message with Correlation ID: %s", d.CorrelationId)
 
+			// Ignore messages with wrong correlation ID
 			if d.CorrelationId != corrID {
 				log.Printf("[HandleGetPersonalGrades] 🔄 Ignoring mismatched Correlation ID: %s", d.CorrelationId)
 				continue
 			}
+
+			// Log raw JSON response payload
+			log.Printf("[HandleGetPersonalGrades] Response payload: %s", string(d.Body))
 
 			var gradesResp struct {
 				Status string        `json:"status"`

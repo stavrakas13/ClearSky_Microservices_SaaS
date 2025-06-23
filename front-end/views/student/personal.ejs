@@ -12,18 +12,21 @@
     <table>
       <thead>
         <tr>
-          <th>Component</th>
-          <th>Score</th>
+          <th>Declaration Period</th>
+          <th>Course Name</th>
+          <th>Grading Status</th>
+          <th>Grade</th>
         </tr>
       </thead>
       <tbody>
-        <!-- JS will inject rows for Total, Q1, Q2, Q3, etc. -->
+        <!-- Rows will be injected by personal.js -->
       </tbody>
     </table>
 
     <%- include('../partials/messageBox') %>
   </main>
 
+  <!-- Make sure this path matches where your bundler/static server serves it -->
   <script type="module" src="/js/student/personal.js"></script>
 </body>
 </html>
