@@ -89,7 +89,7 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	{
 		stats.GET("/available", func(c *gin.Context) { handlers.HandleSubmissionLogs(c, ch) })
 		stats.GET("/courses", func(c *gin.Context) { handlers.HandleSubmissionLogs(c, ch) })
-		stats.GET("/distributions", func(c *gin.Context) { handlers.HandleGetDistributions(ch) })
+		stats.POST("/distributions", handlers.HandleGetDistributions(ch))
 	}
 
 	return r

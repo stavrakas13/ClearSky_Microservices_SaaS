@@ -295,39 +295,71 @@ export const uploadInitialGrades = file => {
 };
 
 ===== front-end/public/api/instructor.js =====
-// public/api/instructor.js
+// front-end/public/api/instructor.js
 import { request } from './_request.js';
 
-/**
- * Fetch pending review requests for the current instructor.
- * orchestrator: PATCH /instructor/review-list
- */
-export const getPendingReviews = ({ course_id, exam_period }) =>
-  request('/instructor/review-list', {
-    method : 'PATCH',
-    body   : { course_id, exam_period }
-  });
+/*-------------------------------------------------------------*
+ | Utilities                                                   |
+ *-------------------------------------------------------------*/
 
 /**
- * Send an instructor’s reply to a specific student request.
- * orchestrator: PATCH /instructor/reply
+ * Strip undefined, null, or empty‐string values from an object,
+ * returning a *new* object that only contains “meaningful” keys.
  */
-export const postInstructorReply = ({
-  user_id,                // student’s user_id from URL
-  course_id,
-  exam_period,
-  instructor_reply_message,
-  instructor_action
-}) =>
+const prune = (obj = {}) =>
+  Object.fromEntries(
+    Object.entries(obj).filter(
+      ([, v]) => v !== undefined && v !== null && v !== ''
+    )
+  );
+
+/*-------------------------------------------------------------*
+ | API calls                                                   |
+ *-------------------------------------------------------------*/
+
+/**
+ * Get pending-review requests for an instructor.
+ * PATCH /instructor/review-list
+ *
+ * @param {{course_id?:string, exam_period?:string}=} filters
+ * @returns {Promise<Array>}
+ */
+export const getPendingReviews = async (filters = {}) => {
+
+  // Log filters before pruning and sending
+  console.log('[DEBUG] 🟡 getPendingReviews called with filters:', filters);
+  const prunedBody = prune(filters);
+
+  // Log pruned body actually sent in request
+  console.log('[DEBUG] 🟡 Pruned request body:', prunedBody);
+
+
+  const res = await request('/instructor/review-list', {
+    method: 'PATCH',
+    body: prune(filters)           // <-- ⬅⬅⬅  IMPORTANT LINE
+  });
+  
+  console.log('[DEBUG] 🟡 Response from /instructor/review-list:', res);
+
+  return res?.data?.data ?? res?.data ?? res;
+};
+
+/**
+ * Send an instructor reply.
+ * PATCH /instructor/reply
+ *
+ * @param {{
+ *   user_id: string,
+ *   course_id: string,
+ *   exam_period?: string,
+ *   instructor_reply_message: string,
+ *   instructor_action: string
+ * }} payload
+ */
+export const postInstructorReply = (payload) =>
   request('/instructor/reply', {
-    method : 'PATCH',
-    body   : {
-      user_id,
-      course_id,
-      exam_period,
-      instructor_reply_message,
-      instructor_action
-    }
+    method: 'PATCH',
+    body: prune(payload)           // <-- ⬅⬅⬅  IMPORTANT LINE
   });
 
 ===== front-end/public/api/personal.js =====
@@ -412,8 +444,8 @@ import { request } from './_request.js';
 export const persistAndCalculateStats = payload =>
   request('/stats/persist', { method: 'POST', body: payload });
 
-export const getDistributions = filters =>
-  request('/stats/distributions', { method: 'POST', body: filters });
+export const getAvailableStats = () =>
+  request('/stats/available', { method: 'GET' });
 
 ===== front-end/public/api/student.js =====
 // student.js
@@ -713,15 +745,15 @@ form.addEventListener('submit', async e => {
 ===== front-end/public/js/institution/statistics.js =====
 // public/js/institution/statistics.js
 import { flash } from '../../script.js';
-import { getDistributions } from '../../api/stats.js';
+import { getAvailableStats } from '../../api/stats.js';
 
 const btn = document.querySelector('button.button--secondary');
 
 btn.addEventListener('click', async () => {
   try {
-    const stats = await getDistributions({ /* filters */ });
-    console.log('Distributions:', stats);
-    flash('Distributions fetched—check console.');
+    const stats = await getAvailableStats();
+    console.log('Available stats:', stats);
+    flash('Available stats fetched—check console.');
   } catch (err) {
     flash(err.message);
   }
@@ -787,21 +819,26 @@ changeForm.addEventListener('submit', async e => {
 });
 
 ===== front-end/public/js/instructor/reply.js =====
-// public/js/instructor/reply.js
+// front-end/public/js/instructor/reply.js
 import { flash } from '../../script.js';
 import { postInstructorReply } from '../../api/instructor.js';
 
 const form = document.querySelector('#instructor-reply-form');
 
-form.addEventListener('submit', async e => {
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const params       = new URLSearchParams(location.search);
-  const user_id      = params.get('req');                // the student’s ID
-  const course_id    = 'software II';                    // or pull from hidden input
-  const exam_period  = 'spring 2025';                    // likewise
+  const qs = new URLSearchParams(location.search);
+  const user_id     = qs.get('student');
+  const course_id   = qs.get('course');
+  const exam_period = qs.get('period');          // may be null
   const instructor_reply_message = form.message.value.trim();
   const instructor_action        = form.decision.value;
+
+  if (!user_id || !course_id) {
+    flash('Missing URL parameters – please navigate from the review list.');
+    return;
+  }
 
   try {
     await postInstructorReply({
@@ -812,99 +849,99 @@ form.addEventListener('submit', async e => {
       instructor_action
     });
     flash('Reply sent!');
-    // Optionally redirect back to the list:
-    // window.location.href = '/instructor/review-list';
+    /* Redirect back to the list after a short toast. */
+    setTimeout(() => (window.location.href = '/instructor/review-list'), 1200);
   } catch (err) {
-    flash(err.message);
+    flash(err.message || 'Failed to send reply');
   }
 });
 
 ===== front-end/public/js/instructor/review-list.js =====
-// public/js/instructor/review-list.js
+// front-end/public/js/instructor/review-list.js
 import { flash } from '../../script.js';
 import { getPendingReviews } from '../../api/instructor.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const payload = { course_id: 'software II', exam_period: 'spring 2025' };
-    // API now returns the array directly
-    const reviews = await getPendingReviews(payload);
+    /* 👉 No blank strings are sent thanks to prune() inside the API helper. */
+    const reviews = await getPendingReviews();   // ← nothing passed
 
     const tbody = document.querySelector('table tbody');
+    if (!reviews.length) {
+      tbody.innerHTML =
+        '<tr><td colspan="4" style="text-align:center;">No pending requests 💤</td></tr>';
+      return;
+    }
+
     tbody.innerHTML = reviews
-      .map(r => `
-        <tr>
-          <td>${r.course_name}</td>
-          <td>${r.exam_period}</td>
-          <td>${r.student}</td>
-          <td>
-            <a class="button" href="/instructor/reply?req=${r.id}">Reply</a>
-          </td>
-        </tr>
-      `)
+      .map((r) => {
+        const qs = new URLSearchParams({
+          student: r.student_id,
+          course: r.course_id,
+          period: r.exam_period ?? ''
+        }).toString();
+
+        return `
+          <tr>
+            <td>${r.course_id}</td>
+            <td>${r.exam_period ?? '-'}</td>
+            <td>${r.student_id}</td>
+            <td>
+              <a class="button" href="/instructor/reply?${qs}">Reply</a>
+            </td>
+          </tr>
+        `;
+      })
       .join('');
   } catch (err) {
-    flash(err.message);
+    flash(err.message || 'Failed to fetch review list');
   }
 });
 
 ===== front-end/public/js/student/my-courses.js =====
 // front-end/public/js/student/my-courses.js
-//
-// Shows all courses for the logged-in student and builds action links
-// that carry ONLY the numeric course_id (e.g. 3205).
-// ────────────────────────────────────────────────────────────────────
 import { flash } from '../../script.js';
 import { getStudentCourses } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const courses = await getStudentCourses();         // array from /personal/grades
+    const courses = await getStudentCourses();      // array from /personal/grades
     const tbody   = document.querySelector('table tbody');
 
     if (!courses.length) {
       tbody.innerHTML = `
-        <tr><td colspan="4" style="text-align:center;">No courses found.</td></tr>`;
+        <tr><td colspan="4" style="text-align:center;">No courses found.</td></tr>
+      `;
       return;
     }
 
     tbody.innerHTML = courses.map(c => {
-      /* ── 1) Resolve display fields ─────────────────────────────── */
-      const courseName = c.classTitle        ?? c.course_name  ?? '—';
-      const examPeriod = c.declarationPeriod ?? c.exam_period  ?? '—';
+      // accept camelCase or snake_case
+      const courseName  = c.classTitle        ?? c.course_name  ?? '—';
+      const examPeriod  = c.declarationPeriod ?? c.exam_period  ?? '—';
 
+      // status might be a string ("open"/"closed") or numeric (0/1)
       let status = c.status ?? c.grading_status;
       if (typeof status === 'number') status = status === 0 ? 'open' : 'closed';
       if (!status) status = '—';
 
-      /* ── 2) Derive a clean numeric course-id for links ─────────── */
-      const rawId = c.course_id ?? c.id ?? courseName;  // whatever we’ve got
-      const numericId =
-        String(rawId).match(/\((\d+)\)/)?.[1]   // digits inside ( ... )
-        || String(rawId).replace(/\D/g, '')     // else keep any digits
-        || encodeURIComponent(rawId);           // fallback
+      // course id for link building – fall back to courseName when missing
+      const courseId = c.course_id ?? c.id ?? encodeURIComponent(courseName);
 
-      /* ── 3) Build row ──────────────────────────────────────────── */
       return `
         <tr ${status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
           <td>${courseName}</td>
           <td>${examPeriod}</td>
           <td>${status}</td>
           <td>
-            <a class="button"
-               href="/student/personal?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
-              View grades
-            </a>
+            <a href="/student/personal?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
+               class="button">View grades</a>
 
-            <a class="button${status !== 'open' ? ' button--secondary' : ''}"
-               href="/student/request?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
-              Ask review
-            </a>
+            <a href="/student/request?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
+               class="button${status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
 
-            <a class="button${status === 'open' ? ' button--secondary' : ''}"
-               href="/student/status?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
-              Status
-            </a>
+            <a href="/student/status?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
+               class="button${status === 'open' ? ' button--secondary' : ''}">Status</a>
           </td>
         </tr>`;
     }).join('');
@@ -962,13 +999,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 ===== front-end/public/js/student/review-request.js =====
 // front-end/public/js/student/review-request.js
-//
-// Submits a grade-review request. Ensures `course_id` contains
-// only the numeric part before sending it to /student/reviewRequest.
-// ────────────────────────────────────────────────────────────────────
 import { flash } from '../../script.js';
 import { postReviewRequest } from '../../api/student.js';
-
+  
 const form = document.querySelector('#student-review-request-form');
 if (!form) {
   console.error('Student review request form (#student-review-request-form) not found!');
@@ -976,30 +1009,22 @@ if (!form) {
   form.addEventListener('submit', async e => {
     e.preventDefault();
 
-    const params = new URLSearchParams(location.search);
-
-    /* ── 1) Extract & sanitise course_id ─────────────────────────── */
-    let course_id = params.get('course');                 // could be “ΤΕΧΝ… (3205)”
-    if (course_id) {
-      course_id = course_id.match(/\((\d+)\)/)?.[1]       // digits inside (...)
-               || course_id.replace(/\D/g, '');           // any digits
-    }
-
-    const exam_period     = params.get('period') || undefined;
+    const params          = new URLSearchParams(location.search);
+    const course_id       = params.get('course');
+    const exam_period     = params.get('period') || undefined;   // allow backend to choose
     const student_message = form.message.value.trim();
 
     if (!course_id) {
-      flash('Course id missing – please navigate from “My courses” page.');
-      location.href = '/student/my-courses';
+      flash('Please pick a course first');
+      window.location.href = '/student/my-courses';
       return;
     }
 
     try {
       await postReviewRequest({ course_id, exam_period, student_message });
       flash('Review request submitted!');
-      form.reset();
     } catch (err) {
-      flash(err.message || 'Failed to submit review request');
+      flash(err.message);
     }
   });
 }
@@ -1032,13 +1057,98 @@ window.addEventListener('DOMContentLoaded', async () => {
 ===== front-end/public/js/student/statistics.js =====
 // student/statistics.js
 import { flash } from '../../script.js';
-import { getDistributions } from '../../api/stats.js';
+import { getAvailableStats, getDistributions } from '../../api/stats.js';
+
+// Helper to render the stats table
+function renderStatsTable(stats, onSelect) {
+  const tbody = document.querySelector('.panel table tbody');
+  tbody.innerHTML = '';
+  stats.forEach((row, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.classTitle || row.course_name || row.course || '-'}</td>
+      <td>${row.declarationPeriod || row.exam_period || '-'}</td>
+      <td>${row.initialSubmissionDate ? row.initialSubmissionDate.split('T')[0] : '-'}</td>
+      <td>${row.finalSubmissionDate ? row.finalSubmissionDate.split('T')[0] : '-'}</td>
+    `;
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', () => onSelect(row));
+    if (idx === 0) tr.style.background = '#e6e7ea'; // highlight first by default
+    tbody.appendChild(tr);
+  });
+}
+
+function renderCharts(data) {
+  const chartsDiv = document.getElementById('stats-charts');
+  chartsDiv.innerHTML = '';
+  if (!data || Object.keys(data).length === 0) {
+    chartsDiv.innerHTML = '<div>No statistics available.</div>';
+    return;
+  }
+  Object.entries(data).forEach(([key, dist]) => {
+    const chartId = `echart-${key}`;
+    const chartDiv = document.createElement('div');
+    chartDiv.id = chartId;
+    chartDiv.style.width = '100%';
+    chartDiv.style.height = '220px';
+    chartDiv.style.minWidth = '180px';
+    chartDiv.style.background = '#fff';
+    chartDiv.style.border = '1px solid #d0d7de';
+    chartDiv.style.borderRadius = '6px';
+    chartDiv.style.marginBottom = '1rem';
+    chartsDiv.appendChild(chartDiv);
+
+    const chart = echarts.init(chartDiv);
+    chart.setOption({
+      title: { text: key.toUpperCase(), left: 'center', top: 8, textStyle: { fontSize: 14 } },
+      tooltip: {},
+      xAxis: {
+        type: 'category',
+        data: dist.categories,
+        name: 'Score',
+        nameLocation: 'middle',
+        nameGap: 25,
+      },
+      yAxis: {
+        type: 'value',
+        name: 'Count',
+        minInterval: 1,
+      },
+      series: [{
+        type: 'bar',
+        data: dist.data,
+        itemStyle: { color: '#006dd0' }
+      }]
+    });
+  });
+}
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const { data } = await getDistributions({ /* filters */ });
-    console.log('Stats:', data);
-    flash('Statistics loaded—see console.');
+    // 1. Fetch available stats for the table
+    const stats = await getAvailableStats();
+    if (!Array.isArray(stats) || stats.length === 0) {
+      flash('No statistics available.');
+      return;
+    }
+    // 2. Render table and set up click handler
+    renderStatsTable(stats, async (row) => {
+      // 3. When a row is clicked, fetch and render distributions
+      const filters = {
+        course: row.course_id || row.course || row.classTitle,
+        declarationPeriod: row.declarationPeriod || row.exam_period,
+        classTitle: row.classTitle || row.course_name || row.course
+      };
+      try {
+        const { data } = await getDistributions(filters);
+        renderCharts(data);
+      } catch (err) {
+        flash('Failed to load statistics: ' + err.message);
+      }
+    });
+    // 4. Auto-select and show charts for the first row
+    document.querySelector('.panel table tbody tr')?.click();
+    flash('Statistics loaded.');
   } catch (err) {
     flash(err.message);
   }
@@ -1999,6 +2109,8 @@ input, select, textarea {
 <html lang="en">
 <head>
   <%- include('../partials/head',{ title: 'Course Statistics' }) %>
+  <!-- Add ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
   <%- include('../partials/navbar',{ user }) %>
@@ -3514,92 +3626,75 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"instructor_review_reply_service/db"
 )
 
-func GetReviewReqeustList(body map[string]interface{}) (string, error) {
-	// input send by orchestrator in json form like:
-	// {
-	//   "body": {
-	//     "course_id": "101"
-	//	 }
-	// }
+func GetReviewRequestList(body map[string]interface{}) (string, error) {
+	log.Println("GetReviewRequestList: invoked with body:", body)
 
 	// extract data from input.
 	courseID, ok := body["course_id"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing course_id")
+		err := fmt.Errorf("missing or invalid course_id")
+		log.Println("GetReviewRequestList: error extracting course_id:", err)
+		return "", err
 	}
+	log.Printf("GetReviewRequestList: querying pending reviews for course_id=%s", courseID)
+
 	query := `
-		SELECT student_id, course_id, review_created_at 
-		FROM reviews 
+		SELECT student_id, course_id, review_created_at
+		FROM reviews
 		WHERE course_id = $1 AND status = 'pending'
-		`
+	`
 	rows, err := db.DB.Query(query, courseID)
 	if err != nil {
+		log.Printf("GetReviewRequestList: query error: %v", err)
 		return "", fmt.Errorf("query error: %v", err)
 	}
 	defer rows.Close()
 
-	var requestlist []ReviewSummary
+	var requestList []ReviewSummary
 	for rows.Next() {
 		var summary ReviewSummary
 		err := rows.Scan(&summary.StudentID, &summary.CourseID, &summary.ReviewCreatedAt)
 		if err != nil {
-			fmt.Println("Scan error:", err)
+			log.Printf("GetReviewRequestList: scan error: %v", err)
 			continue
 		}
-		requestlist = append(requestlist, summary)
+		requestList = append(requestList, summary)
+		log.Printf("GetReviewRequestList: found request: %+v", summary)
 	}
-	if len(requestlist) == 0 {
-		emptyResponse := map[string]interface{}{
+
+	if err = rows.Err(); err != nil {
+		log.Printf("GetReviewRequestList: rows iteration error: %v", err)
+	}
+
+	if len(requestList) == 0 {
+		log.Println("GetReviewRequestList: no pending requests found")
+		emptyResponse := map[string]interface{}{ 
 			"message": "No pending review requests found.",
 			"data":    []ReviewSummary{},
 		}
-		respBytes, _ := json.Marshal(emptyResponse)
+		respBytes, _ := json.Marshal(emptyResponse) // nolint: errcheck
+		log.Println("GetReviewRequestList: returning empty response")
 		return string(respBytes), nil
 	}
 
-	successResponse := map[string]interface{}{
+	log.Printf("GetReviewRequestList: total pending requests: %d", len(requestList))
+	successResponse := map[string]interface{}{ 
 		"message": "Pending review requests retrieved successfully.",
-		"data":    requestlist,
+		"data":    requestList,
 	}
 	respBytes, err := json.Marshal(successResponse)
 	if err != nil {
+		log.Printf("GetReviewRequestList: response marshal error: %v", err)
 		return "", fmt.Errorf("failed to marshal response: %v", err)
 	}
+	log.Println("GetReviewRequestList: returning success response")
 
 	return string(respBytes), nil
 }
-
-/* func GetReviewReqeustList(c *gin.Context) {
-
-	query := `SELECT student_id, course_id, review_created_at FROM reviews WHERE status = 'pending'`
-	rows, err := db.DB.Query(query)
-	if err != nil {
-		log.Println("Query error:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
-		return
-	}
-	defer rows.Close()
-
-	var requestlist []ReviewSummary
-	for rows.Next() {
-		var summary ReviewSummary
-		err := rows.Scan(&summary.StudentID, &summary.CourseID, &summary.ReviewCreatedAt)
-		if err != nil {
-			log.Println("Scan error:", err)
-			continue
-		}
-		requestlist = append(requestlist, summary)
-	}
-	if len(requestlist) == 0 {
-		c.JSON(http.StatusOK, gin.H{"message": "No pending review requests"})
-	} else {
-		c.JSON(http.StatusOK, requestlist)
-	}
-}
-*/
 
 ===== instructor_review_reply_service/controllers/insertStudentRequest.go =====
 package controllers
@@ -3675,47 +3770,49 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"instructor_review_reply_service/db"
 )
 
+// PostReply processes instructor responses for a review request
 func PostReply(body map[string]interface{}) (string, error) {
+	log.Println("PostReply: invoked with body:", body)
 
-	// input send by orchestrator in json form like:
-	//{
-	//	"body": {
-	//	  "course_id": "101",
-	//	  "exam_period": "spring 2025",
-	//	  "user_id": "42"
-	//	  "instructor_reply_message": "NO WAY!"
-	//	  "instructor_action": "Denied"
-	//	}
-	//}
-
+	// extract fields
 	courseID, ok := body["course_id"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing course_id")
+		err := fmt.Errorf("missing or invalid course_id")
+		log.Println("PostReply: error extracting course_id:", err)
+		return "", err
 	}
-
 	userID, ok := body["user_id"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing user_id")
+		err := fmt.Errorf("missing or invalid user_id")
+		log.Println("PostReply: error extracting user_id:", err)
+		return "", err
 	}
-
 	examPeriod, ok := body["exam_period"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing exam_period")
+		err := fmt.Errorf("missing or invalid exam_period")
+		log.Println("PostReply: error extracting exam_period:", err)
+		return "", err
 	}
 
 	instructorReply, ok := body["instructor_reply_message"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing or invalid instructor_reply_message")
+		err := fmt.Errorf("missing or invalid instructor_reply_message")
+		log.Println("PostReply: error extracting instructor_reply_message:", err)
+		return "", err
 	}
-
 	instructorAction, ok := body["instructor_action"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing or invalid instructor_action")
+		err := fmt.Errorf("missing or invalid instructor_action")
+		log.Println("PostReply: error extracting instructor_action:", err)
+		return "", err
 	}
 
+	log.Printf("PostReply: updating review for student_id=%s, course_id=%s, exam_period=%s", userID, courseID, examPeriod)
+	// update statement
 	query := `
 		UPDATE reviews 
 		SET instructor_reply_message = $1,
@@ -3724,64 +3821,34 @@ func PostReply(body map[string]interface{}) (string, error) {
 			reviewed_at = CURRENT_TIMESTAMP
 		WHERE student_id = $3 AND course_id = $4 AND exam_period = $5	
 	`
-
 	result, err := db.DB.Exec(query, instructorReply, instructorAction, userID, courseID, examPeriod)
 	if err != nil {
+		log.Printf("PostReply: update error: %v", err)
 		return "", fmt.Errorf("failed to update review: %v", err)
 	}
 	rowsAffected, _ := result.RowsAffected()
+	log.Printf("PostReply: rows affected: %d", rowsAffected)
 	if rowsAffected == 0 {
-		failResponse := map[string]interface{}{
+		log.Println("PostReply: no rows updated, possible invalid identifiers")
+		failResponse := map[string]interface{}{ 
 			"message": "Failed to update instructor response in database on student end.",
 		}
-		failRespBytes, _ := json.Marshal(failResponse)
+		failRespBytes, _ := json.Marshal(failResponse) // nolint: errcheck
+		log.Println("PostReply: returning failure response to orchestrator")
 		return string(failRespBytes), nil
 	}
 
-	response := map[string]interface{}{
+	successResponse := map[string]interface{}{ 
 		"message": "Instructor response updated successfully on instructor end.",
 	}
-	respBytes, _ := json.Marshal(response)
+	respBytes, err := json.Marshal(successResponse)
+	if err != nil {
+		log.Printf("PostReply: response marshal error: %v", err)
+		return "", fmt.Errorf("failed to marshal response: %v", err)
+	}
+	log.Println("PostReply: returning success response to orchestrator")
 	return string(respBytes), nil
-
 }
-
-/* func PostReply(c *gin.Context) {
-	reviewIDStr := c.Param("review_id")
-	reviewID, err := strconv.Atoi(reviewIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid review ID"})
-		return
-	}
-
-	// Ginstructor reply from request body
-	var reqBody InstructorReply
-	if err := c.ShouldBindJSON(&reqBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON body"})
-		return
-	}
-	query := `
-		UPDATE reviews
-		SET instructor_reply_message = $1,
-			instructor_action = $2,
-			status = 'reviewed',
-			reviewed_at = CURRENT_TIMESTAMP
-		WHERE review_id = $3
-	`
-	_, err = db.DB.Exec(query, reqBody.InstructorReply, reqBody.InstructorAction, reviewID)
-	if err != nil {
-		log.Println("Update error:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update review"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"message":                  "Reply submitted successfully.",
-		"review_id":                reviewID,
-		"instructor_reply_message": reqBody.InstructorReply,
-		"instructor_action":        reqBody.InstructorAction,
-	})
-}
-*/
 
 ===== instructor_review_reply_service/db/db_init.go =====
 package db
@@ -4064,7 +4131,7 @@ func Routing(routingKey string, messageBody []byte) (string, error) {
 		return controllers.PostReply(msg.Body)
 
 	case "instructor.getRequestsList":
-		return controllers.GetReviewReqeustList(msg.Body)
+		return controllers.GetReviewRequestList(msg.Body)
 
 	case "instructor.getRequestInfo":
 		return controllers.GetRequestInfo(msg.Body)
@@ -5125,31 +5192,34 @@ func HandleGetPersonalGrades(c *gin.Context, ch *amqp.Channel) {
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"io/ioutil"
+	"log"
 	"net/http"
-	"orchestrator/internal/middleware"
 	"time"
+
+	"orchestrator/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// Assume all data received from json.
-
 // helperRequest sends the payload to the given routing key on ExchangeKey and waits for a JSON response
 func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[string]interface{}, error) {
-	fmt.Printf("Outgoing payload: %s\n routing key: %s\n", payload, routingKey)
+	log.Printf("[DEBUG] 🟡 helperRequest: routingKey=%s, payload=%s", routingKey, payload)
 
 	corrID := "abc123"
 	replyQueue, err := ch.QueueDeclare("", false, true, true, false, nil)
 	if err != nil {
+		log.Printf("[DEBUG] 🟡 helperRequest: QueueDeclare error: %v", err)
 		return nil, err
 	}
 
 	msgs, err := ch.Consume(replyQueue.Name, "", true, false, false, false, nil)
 	if err != nil {
+		log.Printf("[DEBUG] 🟡 helperRequest: Consume error: %v", err)
 		return nil, err
 	}
 
@@ -5166,6 +5236,7 @@ func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[str
 		},
 	)
 	if err != nil {
+		log.Printf("[DEBUG] 🟡 helperRequest: Publish error: %v", err)
 		return nil, err
 	}
 
@@ -5176,29 +5247,36 @@ func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[str
 			if msg.CorrelationId == corrID {
 				var response map[string]interface{}
 				err := json.Unmarshal(msg.Body, &response)
+				if err != nil {
+					log.Printf("[DEBUG] 🟡 helperRequest: Unmarshal error: %v", err)
+				}
+				log.Printf("[DEBUG] 🟡 helperRequest: received response: %+v", response)
 				return response, err
 			}
 		case <-timeout:
+			log.Printf("[DEBUG] 🟡 helperRequest: timeout waiting for response")
 			return nil, errors.New("timeout waiting for response")
 		}
 	}
 }
 
-// handleReviewRequested processes new request events
+// HandlePostNewRequest processes new request events
 // -> sends 2 events: student.postNewRequest & instructor.insertStudentRequest
 func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
-	// Get student info from JWT using middleware helpers
+	log.Printf("HandlePostNewRequest invoked")
 
-	// IN STUDENT AND INSTRUCTOR SERVICE, USERID IS STUDENT ID, INSTRUCTORS ARE DEFINED BY COUSCES
+	// Get student info from JWT using middleware helpers
 	studentID := middleware.GetStudentID(c)
 	userID := middleware.GetStudentID(c)
 
 	if !middleware.IsStudent(c) {
+		log.Printf("HandlePostNewRequest: forbidden, not a student")
 		c.JSON(http.StatusForbidden, gin.H{"error": "Only students can submit review requests"})
 		return
 	}
 
 	if studentID == "" {
+		log.Printf("HandlePostNewRequest: missing student ID")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Student ID is required for review requests"})
 		return
 	}
@@ -5209,45 +5287,51 @@ func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
 		ExamPeriod     string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandlePostNewRequest: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("HandlePostNewRequest: payload struct %+v", req)
 
-	// Build payload with student info from JWT
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period":     req.ExamPeriod,
 			"course_id":       req.CourseID,
 			"user_id":         userID,
-			"student_id":      studentID, // Add student_id from JWT
+			"student_id":      studentID,
 			"student_message": req.StudentMessage,
 		},
 	})
 
 	responseStudent, err := helperRequest(ch, "student.postNewRequest", payload)
 	if err != nil {
+		log.Printf("HandlePostNewRequest: student.postNewRequest error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandlePostNewRequest: responseStudent %+v", responseStudent)
 	c.JSON(http.StatusOK, gin.H{"data": responseStudent})
+
 	responseInstructor, err := helperRequest(ch, "instructor.insertStudentRequest", payload)
 	if err != nil {
+		log.Printf("HandlePostNewRequest: instructor.insertStudentRequest error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandlePostNewRequest: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
 
-// handleGetRequestStatus processes student sees request status events
+// HandleGetRequestStatus processes student sees request status events
 // -> sends 1 event: student.getRequestStatus
 func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
-	// Get student info from JWT using middleware helpers
+	log.Printf("HandleGetRequestStatus invoked")
 
-	// IN STUDENT AND INSTRUCTOR SERVICE, USERID IS STUDENT ID, INSTRUCTORS ARE DEFINED BY COUSCES
 	studentID := middleware.GetStudentID(c)
 	userID := middleware.GetStudentID(c)
 
 	if !middleware.IsStudent(c) {
+		log.Printf("HandleGetRequestStatus: forbidden, not a student")
 		c.JSON(http.StatusForbidden, gin.H{"error": "Only students can check request status"})
 		return
 	}
@@ -5257,30 +5341,36 @@ func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandleGetRequestStatus: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("HandleGetRequestStatus: payload struct %+v", req)
 
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period": req.ExamPeriod,
 			"course_id":   req.CourseID,
 			"user_id":     userID,
-			"student_id":  studentID, // Add student_id from JWT
+			"student_id":  studentID,
 		},
 	})
+
 	responseStudent, err := helperRequest(ch, "student.getRequestStatus", payload)
 	if err != nil {
+		log.Printf("HandleGetRequestStatus: error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandleGetRequestStatus: responseStudent %+v", responseStudent)
 	c.JSON(http.StatusOK, gin.H{"data": responseStudent})
 }
 
-// handlePostResponse processes responses on review requests
+// HandlePostResponse processes responses on review requests
 // -> sends 2 events: student.updateInstructorResponse & instructor.postResponse
 func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
-	// receive message
+	log.Printf("HandlePostResponse invoked")
+
 	var req struct {
 		CourseID               string `json:"course_id"`
 		UserID                 string `json:"user_id"`
@@ -5289,12 +5379,13 @@ func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 		InstructorAction       string `json:"instructor_action"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandlePostResponse: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("HandlePostResponse: payload struct %+v", req)
 
-	// add message payload
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period":              req.ExamPeriod,
 			"course_id":                req.CourseID,
@@ -5306,73 +5397,108 @@ func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 
 	responseStudent, err := helperRequest(ch, "student.updateInstructorResponse", payload)
 	if err != nil {
+		log.Printf("HandlePostResponse: student.updateInstructorResponse error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandlePostResponse: responseStudent %+v", responseStudent)
 	c.JSON(http.StatusOK, gin.H{"data": responseStudent})
+
 	responseInstructor, err := helperRequest(ch, "instructor.postResponse", payload)
 	if err != nil {
+		log.Printf("HandlePostResponse: instructor.postResponse error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandlePostResponse: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
 
-// handleGetRequestList processes instructor get list of pending requests
+// HandleGetRequestList processes instructor get list of pending requests
 // -> sends 1 event: instructor.getRequestsList
 func HandleGetRequestList(c *gin.Context, ch *amqp.Channel) {
-	// receive message
+	log.Printf("[DEBUG] 🟡 HandleGetRequestList invoked")
+
+	// Log raw JSON body from request
+	bodyBytes, err := c.GetRawData()
+	if err != nil {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: failed to read raw body: %v", err)
+	} else {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: raw request body: %s", string(bodyBytes))
+		// After reading raw data, need to reset body for ShouldBindJSON
+		c.Request.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
+
 	var req struct {
 		CourseID   string `json:"course_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("[DEBUG] 🟡 HandleGetRequestList: payload struct %+v", req)
 
-	// add message payload
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period": req.ExamPeriod,
 			"course_id":   req.CourseID,
 		},
 	})
+	log.Printf("[DEBUG] 🟡 HandleGetRequestList: sending payload to helperRequest: %s", string(payload))
+
 	responseInstructor, err := helperRequest(ch, "instructor.getRequestsList", payload)
 	if err != nil {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Log the raw response from helperRequest as JSON
+	respBytes, err := json.Marshal(responseInstructor)
+	if err != nil {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: failed to marshal responseInstructor: %v", err)
+	} else {
+		log.Printf("[DEBUG] 🟡 HandleGetRequestList: raw response from helperRequest: %s", string(respBytes))
+	}
+
+	log.Printf("[DEBUG] 🟡 HandleGetRequestList: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
 
-// handleGetRequestInfo processes instructor sees request details
+// HandleGetRequestInfo processes instructor sees request details
 // -> sends 1 event: instructor.getRequestInfo
 func HandleGetRequestInfo(c *gin.Context, ch *amqp.Channel) {
-	// receive message
+	log.Printf("HandleGetRequestInfo invoked")
+
 	var req struct {
 		CourseID   string `json:"course_id"`
 		UserID     string `json:"user_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandleGetRequestInfo: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("HandleGetRequestInfo: payload struct %+v", req)
 
-	// add message payload
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period": req.ExamPeriod,
 			"course_id":   req.CourseID,
 			"user_id":     req.UserID,
 		},
 	})
+
 	responseInstructor, err := helperRequest(ch, "instructor.getRequestInfo", payload)
 	if err != nil {
+		log.Printf("HandleGetRequestInfo: error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandleGetRequestInfo: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
 
@@ -5568,7 +5694,7 @@ type getGradesRequest struct {
 }
 
 // HandleGetGrades is your Gin handler
-func HandleGetGrades(ch *amqp.Channel) gin.HandlerFunc {
+func HandleGetDistributions(ch *amqp.Channel) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		// 1) bind JSON
@@ -6162,11 +6288,11 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 
 	// Allow CORS in development
 	r.Use(cors.New(cors.Config{
-		AllowOrigins     : []string{"*"},
-		AllowMethods     : []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders     : []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders    : []string{"Content-Length"},
-		AllowCredentials : true,
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
 	}))
 
 	r.MaxMultipartMemory = 16 << 20 // 16 MiB
@@ -6175,10 +6301,10 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	//  Public endpoints (no JWT)
 	// ────────────────────────────────────────────────────────────────────────
 	{
-		r.POST("/user/register",         func(c *gin.Context) { handlers.HandleUserRegister(c, ch) })
-		r.POST("/user/login",            func(c *gin.Context) { handlers.HandleUserLogin(c, ch) })
-		r.DELETE("/user/delete",         func(c *gin.Context) { handlers.HandleUserDelete(c, ch) })
-		r.POST("/user/google-login",     func(c *gin.Context) { handlers.HandleUserGoogleLogin(c, ch) })
+		r.POST("/user/register", func(c *gin.Context) { handlers.HandleUserRegister(c, ch) })
+		r.POST("/user/login", func(c *gin.Context) { handlers.HandleUserLogin(c, ch) })
+		r.DELETE("/user/delete", func(c *gin.Context) { handlers.HandleUserDelete(c, ch) })
+		r.POST("/user/google-login", func(c *gin.Context) { handlers.HandleUserGoogleLogin(c, ch) })
 		r.PATCH("/user/change-password", func(c *gin.Context) { handlers.HandleUserChangePassword(c, ch) })
 
 		// NEW: purchase credits endpoint
@@ -6202,9 +6328,9 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		c.Next()
 	})
 	{
-		std.GET ("/personal/grades",             func(c *gin.Context) { handlers.HandleGetPersonalGrades(c, ch) })
-		std.PATCH("/student/reviewRequest",      func(c *gin.Context) { handlers.HandlePostNewRequest(c, ch) })
-		std.PATCH("/student/status",             func(c *gin.Context) { handlers.HandleGetRequestStatus(c, ch) })
+		std.GET("/personal/grades", func(c *gin.Context) { handlers.HandleGetPersonalGrades(c, ch) })
+		std.PATCH("/student/reviewRequest", func(c *gin.Context) { handlers.HandlePostNewRequest(c, ch) })
+		std.PATCH("/student/status", func(c *gin.Context) { handlers.HandleGetRequestStatus(c, ch) })
 	}
 
 	// ────────────────────────────────────────────────────────────────────────
@@ -6221,10 +6347,10 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		c.Next()
 	})
 	{
-		instr.POST  ("/upload_init",           func(c *gin.Context) { handlers.UploadExcelInit(c, ch) })
-		instr.PATCH ("/postFinalGrades",       func(c *gin.Context) { handlers.UploadExcelFinal(c, ch) })
-		instr.PATCH ("/instructor/review-list",func(c *gin.Context) { handlers.HandleGetRequestList(c, ch) })
-		instr.PATCH ("/instructor/reply",      func(c *gin.Context) { handlers.HandlePostResponse(c, ch) })
+		instr.POST("/upload_init", func(c *gin.Context) { handlers.UploadExcelInit(c, ch) })
+		instr.PATCH("/postFinalGrades", func(c *gin.Context) { handlers.UploadExcelFinal(c, ch) })
+		instr.PATCH("/instructor/review-list", func(c *gin.Context) { handlers.HandleGetRequestList(c, ch) })
+		instr.PATCH("/instructor/reply", func(c *gin.Context) { handlers.HandlePostResponse(c, ch) })
 	}
 
 	// ────────────────────────────────────────────────────────────────────────
@@ -6234,7 +6360,8 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 	stats.Use(mw.JWTAuthMiddleware())
 	{
 		stats.GET("/available", func(c *gin.Context) { handlers.HandleSubmissionLogs(c, ch) })
-		stats.GET("/courses",   func(c *gin.Context) { handlers.HandleSubmissionLogs(c, ch) })
+		stats.GET("/courses", func(c *gin.Context) { handlers.HandleSubmissionLogs(c, ch) })
+		stats.GET("/distributions", func(c *gin.Context) { handlers.HandleGetDistributions(ch) })
 	}
 
 	return r

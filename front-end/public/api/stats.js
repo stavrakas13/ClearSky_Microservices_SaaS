@@ -1,8 +1,24 @@
-// stats.js
+// public/api/stats.js
 import { request } from './_request.js';
 
-export const persistAndCalculateStats = payload =>
-  request('/stats/persist', { method: 'POST', body: payload });
+/**
+ * GET /stats/available
+ * returns either { data: […] } or […] directly
+ */
+export async function getAvailableStats() {
+  const res = await request('/stats/available');
+  // if your API wraps in { data: […] }, use that, else assume res itself is the array
+  return res.data ?? res;
+}
 
-export const getDistributions = filters =>
-  request('/stats/distributions', { method: 'POST', body: filters });
+/**
+ * POST /stats/distributions
+ * again, unwrap .data if present
+ */
+export async function getDistributions({ course, declarationPeriod, classTitle }) {
+  const res = await request('/stats/distributions', {
+    method: 'POST',
+    body: { course, declarationPeriod, classTitle }
+  });
+  return res.data ?? res;
+}
