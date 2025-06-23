@@ -218,14 +218,19 @@ app.get('/instructor/post-initial', auth('instructor'), (req,res)=>res.render('i
 app.get('/instructor/post-final',   auth('instructor'), (req,res)=>res.render('instructor/postFinal',  { user:req.session.user, title:'Post Final' }));
 app.get('/instructor/review-list',  auth('instructor'), (req,res)=>res.render('instructor/reviewList', { user:req.session.user, title:'Review Requests' }));
 app.get('/instructor/reply',        auth('instructor'), (req,res)=>{
-  const request_id = req.query.req || '';
+  // Extract query parameters from URL
+  const course_id   = req.query.course   || '';
+  const exam_period = req.query.period   || '';
+  const user_id     = req.query.student  || '';
+  // Optionally, you could look up course_name/student_name from DB if needed
+
   res.render('instructor/replyForm',{
     user        : req.session.user,
     title       : 'Reply to Review Request',
-    request_id,
-    course_name : 'software II',
-    exam_period : 'spring 2025',
-    student_name: 'john doe',
+    request_id  : '', // not used, but kept for compatibility
+    course_name : course_id,
+    exam_period : exam_period,
+    student_name: user_id,
   });
 });
 app.get('/instructor/statistics',   auth('instructor'), (req,res)=>res.render('instructor/statistics', { user:req.session.user, title:'Statistics' }));
@@ -322,10 +327,22 @@ const prune = (obj = {}) =>
  * @returns {Promise<Array>}
  */
 export const getPendingReviews = async (filters = {}) => {
+
+  // Log filters before pruning and sending
+  console.log('[DEBUG] 🟡 getPendingReviews called with filters:', filters);
+  const prunedBody = prune(filters);
+
+  // Log pruned body actually sent in request
+  console.log('[DEBUG] 🟡 Pruned request body:', prunedBody);
+
+
   const res = await request('/instructor/review-list', {
     method: 'PATCH',
     body: prune(filters)           // <-- ⬅⬅⬅  IMPORTANT LINE
   });
+  
+  console.log('[DEBUG] 🟡 Response from /instructor/review-list:', res);
+
   return res?.data?.data ?? res?.data ?? res;
 };
 
@@ -393,27 +410,39 @@ function getJWT() {
 
 /**
  * Generic request helper that:
- *  • automatically JSON‐stringifies objects
+ *  • automatically JSON‐stringifies objects (except GETs, which become query strings)
  *  • sends FormData unchanged
  *  • injects `Authorization: Bearer <token>` if you have a JWT
  */
 export async function request(path, { method = 'GET', body, headers } = {}) {
   console.log('→ [API]', method, path, 'body:', body);
 
+  // build full URL
+  let url = API_BASE + path;
   const opts = { method, headers: { ...headers } };
+
+  // inject auth
   const token = getJWT();
   if (token && !opts.headers.Authorization) {
     opts.headers.Authorization = `Bearer ${token}`;
   }
 
-  if (body instanceof FormData) {
+  // If GET + plain object, turn into query string
+  if (method.toUpperCase() === 'GET' && body && !(body instanceof FormData)) {
+    const qs = new URLSearchParams(body).toString();
+    url += (url.includes('?') ? '&' : '?') + qs;
+  }
+  // If it's FormData, send as-is
+  else if (body instanceof FormData) {
     opts.body = body;
-  } else if (body !== undefined) {
+  }
+  // Otherwise (non-GET JSON payload)
+  else if (body !== undefined) {
     opts.body = JSON.stringify(body);
     opts.headers = { 'Content-Type': 'application/json', ...opts.headers };
   }
 
-  const res = await fetch(`${API_BASE}${path}`, opts);
+  const res = await fetch(url, opts);
   const json = await res.json().catch(() => ({}));
 
   if (!res.ok) {
@@ -423,14 +452,30 @@ export async function request(path, { method = 'GET', body, headers } = {}) {
 }
 
 ===== front-end/public/api/stats.js =====
-// stats.js
+// public/api/stats.js
 import { request } from './_request.js';
 
-export const persistAndCalculateStats = payload =>
-  request('/stats/persist', { method: 'POST', body: payload });
+/**
+ * GET /stats/available
+ * returns either { data: […] } or […] directly
+ */
+export async function getAvailableStats() {
+  const res = await request('/stats/available');
+  // if your API wraps in { data: […] }, use that, else assume res itself is the array
+  return res.data ?? res;
+}
 
-export const getDistributions = filters =>
-  request('/stats/distributions', { method: 'POST', body: filters });
+/**
+ * POST /stats/distributions
+ * again, unwrap .data if present
+ */
+export async function getDistributions({ course, declarationPeriod, classTitle }) {
+  const res = await request('/stats/distributions', {
+    method: 'POST',
+    body: { course, declarationPeriod, classTitle }
+  });
+  return res.data ?? res;
+}
 
 ===== front-end/public/api/student.js =====
 // student.js
@@ -728,21 +773,8 @@ form.addEventListener('submit', async e => {
 });
 
 ===== front-end/public/js/institution/statistics.js =====
-// public/js/institution/statistics.js
-import { flash } from '../../script.js';
-import { getDistributions } from '../../api/stats.js';
-
-const btn = document.querySelector('button.button--secondary');
-
-btn.addEventListener('click', async () => {
-  try {
-    const stats = await getDistributions({ /* filters */ });
-    console.log('Distributions:', stats);
-    flash('Distributions fetched—check console.');
-  } catch (err) {
-    flash(err.message);
-  }
-});
+import '../../js/student/statistics.js';
+// This ensures the same statistics logic is used for all roles.
 
 ===== front-end/public/js/institution/user-management.js =====
 import { flash } from '../../script.js';
@@ -883,63 +915,54 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+===== front-end/public/js/instructor/statistics.js =====
+import '../../js/student/statistics.js';
+// This ensures the same statistics logic is used for all roles.
+
 ===== front-end/public/js/student/my-courses.js =====
 // front-end/public/js/student/my-courses.js
-//
-// Shows all courses for the logged-in student and builds action links
-// that carry ONLY the numeric course_id (e.g. 3205).
-// ────────────────────────────────────────────────────────────────────
 import { flash } from '../../script.js';
 import { getStudentCourses } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const courses = await getStudentCourses();         // array from /personal/grades
+    const courses = await getStudentCourses();      // array from /personal/grades
     const tbody   = document.querySelector('table tbody');
 
     if (!courses.length) {
       tbody.innerHTML = `
-        <tr><td colspan="4" style="text-align:center;">No courses found.</td></tr>`;
+        <tr><td colspan="4" style="text-align:center;">No courses found.</td></tr>
+      `;
       return;
     }
 
     tbody.innerHTML = courses.map(c => {
-      /* ── 1) Resolve display fields ─────────────────────────────── */
-      const courseName = c.classTitle        ?? c.course_name  ?? '—';
-      const examPeriod = c.declarationPeriod ?? c.exam_period  ?? '—';
+      // accept camelCase or snake_case
+      const courseName  = c.classTitle        ?? c.course_name  ?? '—';
+      const examPeriod  = c.declarationPeriod ?? c.exam_period  ?? '—';
 
+      // status might be a string ("open"/"closed") or numeric (0/1)
       let status = c.status ?? c.grading_status;
       if (typeof status === 'number') status = status === 0 ? 'open' : 'closed';
       if (!status) status = '—';
 
-      /* ── 2) Derive a clean numeric course-id for links ─────────── */
-      const rawId = c.course_id ?? c.id ?? courseName;  // whatever we’ve got
-      const numericId =
-        String(rawId).match(/\((\d+)\)/)?.[1]   // digits inside ( ... )
-        || String(rawId).replace(/\D/g, '')     // else keep any digits
-        || encodeURIComponent(rawId);           // fallback
+      // course id for link building – fall back to courseName when missing
+      const courseId = c.course_id ?? c.id ?? encodeURIComponent(courseName);
 
-      /* ── 3) Build row ──────────────────────────────────────────── */
       return `
         <tr ${status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
           <td>${courseName}</td>
           <td>${examPeriod}</td>
           <td>${status}</td>
           <td>
-            <a class="button"
-               href="/student/personal?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
-              View grades
-            </a>
+            <a href="/student/personal?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
+               class="button">View grades</a>
 
-            <a class="button${status !== 'open' ? ' button--secondary' : ''}"
-               href="/student/request?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
-              Ask review
-            </a>
+            <a href="/student/request?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
+               class="button${status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
 
-            <a class="button${status === 'open' ? ' button--secondary' : ''}"
-               href="/student/status?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
-              Status
-            </a>
+            <a href="/student/status?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
+               class="button${status === 'open' ? ' button--secondary' : ''}">Status</a>
           </td>
         </tr>`;
     }).join('');
@@ -997,13 +1020,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 ===== front-end/public/js/student/review-request.js =====
 // front-end/public/js/student/review-request.js
-//
-// Submits a grade-review request. Ensures `course_id` contains
-// only the numeric part before sending it to /student/reviewRequest.
-// ────────────────────────────────────────────────────────────────────
 import { flash } from '../../script.js';
 import { postReviewRequest } from '../../api/student.js';
-
+  
 const form = document.querySelector('#student-review-request-form');
 if (!form) {
   console.error('Student review request form (#student-review-request-form) not found!');
@@ -1011,30 +1030,22 @@ if (!form) {
   form.addEventListener('submit', async e => {
     e.preventDefault();
 
-    const params = new URLSearchParams(location.search);
-
-    /* ── 1) Extract & sanitise course_id ─────────────────────────── */
-    let course_id = params.get('course');                 // could be “ΤΕΧΝ… (3205)”
-    if (course_id) {
-      course_id = course_id.match(/\((\d+)\)/)?.[1]       // digits inside (...)
-               || course_id.replace(/\D/g, '');           // any digits
-    }
-
-    const exam_period     = params.get('period') || undefined;
+    const params          = new URLSearchParams(location.search);
+    const course_id       = params.get('course');
+    const exam_period     = params.get('period') || undefined;   // allow backend to choose
     const student_message = form.message.value.trim();
 
     if (!course_id) {
-      flash('Course id missing – please navigate from “My courses” page.');
-      location.href = '/student/my-courses';
+      flash('Please pick a course first');
+      window.location.href = '/student/my-courses';
       return;
     }
 
     try {
       await postReviewRequest({ course_id, exam_period, student_message });
       flash('Review request submitted!');
-      form.reset();
     } catch (err) {
-      flash(err.message || 'Failed to submit review request');
+      flash(err.message);
     }
   });
 }
@@ -1065,19 +1076,146 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 ===== front-end/public/js/student/statistics.js =====
-// student/statistics.js
+// public/js/student/statistics.js
 import { flash } from '../../script.js';
-import { getDistributions } from '../../api/stats.js';
+import { getAvailableStats, getDistributions } from '../../api/stats.js';
+
+function renderStatsTable(stats, onSelect, selectedIdx = 0) {
+  const tbody = document.querySelector('.panel table tbody');
+  tbody.innerHTML = '';
+  stats.forEach((row, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:#006dd0;cursor:pointer;text-decoration:underline;">
+        ${row.classTitle || row.course_name || row.course || '-'}
+      </td>
+      <td>${row.declarationPeriod || row.exam_period || '-'}</td>
+      <td>${row.initialSubmissionDate?.split('T')[0] || '-'}</td>
+      <td>${row.finalSubmissionDate?.split('T')[0] || '-'}</td>
+    `;
+    tr.style.cursor = 'pointer';
+    if (idx === selectedIdx) {
+      tr.style.background = '#e6e7ea';
+      tr.classList.add('selected-course-row');
+    }
+    tr.addEventListener('click', () => onSelect(row, idx));
+    tbody.appendChild(tr);
+  });
+}
+
+function renderCharts(data, courseLabel, periodLabel) {
+  const chartsDiv = document.getElementById('stats-charts');
+  chartsDiv.innerHTML = '';
+
+  // — Heading —
+  const heading = document.createElement('div');
+  heading.style.fontWeight   = 'bold';
+  heading.style.fontSize     = '1.1rem';
+  heading.style.marginBottom = '0.5rem';
+  heading.textContent = 
+    `Statistics for: ${courseLabel}` + 
+    (periodLabel ? ` (${periodLabel})` : '');
+  chartsDiv.appendChild(heading);
+
+  if (!data || Object.keys(data).length === 0) {
+    const msg = document.createElement('div');
+    msg.textContent = 'No statistics available.';
+    chartsDiv.appendChild(msg);
+    return;
+  }
+
+  // — Grid wrapper —
+  const grid = document.createElement('div');
+  grid.className = 'grid-stats-inner';
+  chartsDiv.appendChild(grid);
+
+  // — Sort keys: grade, Q1–Q10, then anything else —
+  const keys  = Object.keys(data);
+  const qKeys = Array.from({ length: 10 }, (_, i) => `Q${i+1}`);
+  const sortedKeys = [
+    ...(['grade'].filter(k => keys.includes(k))),
+    ...qKeys.filter(k => keys.includes(k)),
+    ...keys.filter(k => k !== 'grade' && !qKeys.includes(k))
+  ];
+
+  sortedKeys.forEach(key => {
+    const dist = data[key];
+    if (!dist) return;
+
+    // — Chart container —
+    const chartDiv = document.createElement('div');
+    chartDiv.id = `echart-${key}`;
+    Object.assign(chartDiv.style, {
+      height: '260px',
+      background: '#fff',
+      border: '1px solid #d0d7de',
+      borderRadius: '10px',
+      boxShadow: '0 2px 8px #e6e7ea'
+    });
+    grid.appendChild(chartDiv);
+
+    const chart = echarts.init(chartDiv);
+    chart.setOption({
+      title:    { text: key.toUpperCase(), left: 'center', top: 8,
+                  textStyle: { fontSize:15, fontWeight:600 } },
+      tooltip:  { trigger: 'axis' },
+      xAxis:    {
+        type:        'category',
+        data:        dist.categories,
+        name:        'Score',
+        nameLocation:'middle',
+        nameGap:     25
+      },
+      yAxis:    { type:'value', name:'Count', minInterval:1 },
+      series: [{
+        type: 'bar',
+        data: dist.data,
+        itemStyle:{ color:'#006dd0', borderRadius:[4,4,0,0] }
+      }]
+    });
+    window.addEventListener('resize', () => chart.resize());
+  });
+}
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const { data } = await getDistributions({ /* filters */ });
-    console.log('Stats:', data);
-    flash('Statistics loaded—see console.');
+    const stats = await getAvailableStats();
+    if (!Array.isArray(stats) || !stats.length) {
+      return flash('No statistics available.');
+    }
+
+    let selectedIdx = 0;
+    const onSelect = async (row, idx) => {
+      selectedIdx = idx;
+      renderStatsTable(stats, onSelect, selectedIdx);
+
+      const filters = {
+        course:            row.course_id        || row.course   || row.classTitle,
+        declarationPeriod: row.declarationPeriod || row.exam_period,
+        classTitle:        row.classTitle       || row.course_name || row.course
+      };
+
+      try {
+        const data = await getDistributions(filters);
+        renderCharts(
+          data,
+          row.classTitle        || row.course_name || row.course || '-',
+          row.declarationPeriod || row.exam_period || ''
+        );
+      } catch (err) {
+        flash('Failed to load statistics: ' + err.message);
+      }
+    };
+
+    renderStatsTable(stats, onSelect, selectedIdx);
+    document.querySelector('.panel table tbody tr')?.click();
+    flash('Statistics loaded.');
   } catch (err) {
     flash(err.message);
   }
 });
+
+// This file is already generic and works for all roles as long as the HTML structure matches.
 
 ===== front-end/public/script.js =====
 // optional flash helper
@@ -1256,6 +1394,17 @@ input, select, textarea {
   border: 1px solid #ccd1d6;
   border-radius: 4px;
 }
+/* ─── statistics grid ─── */
+.grid-stats {
+  margin-top: 1rem;
+}
+
+/* The inner wrapper that actually lays out your charts */
+.grid-stats-inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.2rem;
+}
 
 /* If you have additional .navbar__* rules, leave them intact below */
 .navbar__brand a { color: #fff; font-weight: 600; text-decoration: none; font-size: 1.2rem }
@@ -1348,28 +1497,44 @@ input, select, textarea {
 </html>
 
 ===== front-end/views/institution/statistics.ejs =====
-<!DOCTYPE html><html lang="en"><head>
-  <%- include('../partials/head',{title}) %>
-</head><body>
-  <%- include('../partials/navbar',{user}) %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head',{ title }) %>
+  <!-- Add ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+  <%- include('../partials/navbar',{ user }) %>
   <main class="container">
     <%- include('../partials/header') %>
     <div class="panel">
-      <div class="panel-header">Available course statistics
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Available course statistics</span>
         <button class="button button--secondary" style="float:right;">filter my courses</button>
       </div>
       <table>
-        <thead><tr><th>course name</th><th>exam period</th><th>initial submission</th><th>final submission</th></tr></thead>
-        <tbody><tr><td>physics</td><td>fall 2024</td><td>2025‑02‑22</td><td>2025‑02‑28</td></tr></tbody>
+        <thead>
+          <tr>
+            <th>Course Name</th>
+            <th>Exam Period</th>
+            <th>Initial Submission</th>
+            <th>Final Submission</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populated by JS -->
+        </tbody>
       </table>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.6rem;margin-top:1rem;">
-        <% for(let i=0;i<6;i++){ %>
-          <div style="border:1px solid #d0d7de;height:120px;">chart</div>
-        <% } %>
-      </div>
     </div>
+    <div id="stats-charts" class="grid-stats">
+      <!-- JS will render charts here -->
+    </div>
+    <%- include('../partials/messageBox') %>
   </main>
-</body></html>
+  <script type="module" src="/js/student/statistics.js"></script>
+</body>
+</html>
 
 ===== front-end/views/institution/userManagement.ejs =====
 <!DOCTYPE html>
@@ -1636,28 +1801,44 @@ input, select, textarea {
 </html>
 
 ===== front-end/views/instructor/statistics.ejs =====
-<!DOCTYPE html><html lang="en"><head>
-  <%- include('../partials/head',{title}) %>
-</head><body>
-  <%- include('../partials/navbar',{user}) %>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('../partials/head',{ title: 'Course Statistics' }) %>
+  <!-- Add ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+  <%- include('../partials/navbar',{ user }) %>
   <main class="container">
     <%- include('../partials/header') %>
     <div class="panel">
-      <div class="panel-header">Available course statistics
-        <button class="button button--secondary" style="float:right;">filter my courses</button>
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Available course statistics</span>
+        <a href="/instructor/post-initial" class="button button--secondary">My Courses</a>
       </div>
       <table>
-        <thead><tr><th>course name</th><th>exam period</th><th>initial submission</th><th>final submission</th></tr></thead>
-        <tbody><tr><td>physics</td><td>fall 2024</td><td>2025‑02‑22</td><td>2025‑02‑28</td></tr></tbody>
+        <thead>
+          <tr>
+            <th>Course Name</th>
+            <th>Exam Period</th>
+            <th>Initial Submission</th>
+            <th>Final Submission</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populated by JS -->
+        </tbody>
       </table>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.6rem;margin-top:1rem;">
-        <% for(let i=0;i<6;i++){ %>
-          <div style="border:1px solid #d0d7de;height:120px;">chart</div>
-        <% } %>
-      </div>
     </div>
+    <div id="stats-charts" class="grid-stats">
+      <!-- JS will render charts here -->
+    </div>
+    <%- include('../partials/messageBox') %>
   </main>
-</body></html>
+  <script type="module" src="/js/student/statistics.js"></script>
+</body>
+</html>
 
 ===== front-end/views/login.ejs =====
 <!DOCTYPE html>
@@ -2034,12 +2215,13 @@ input, select, textarea {
 <html lang="en">
 <head>
   <%- include('../partials/head',{ title: 'Course Statistics' }) %>
+  <!-- Add ECharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
   <%- include('../partials/navbar',{ user }) %>
   <main class="container">
     <%- include('../partials/header') %>
-
     <div class="panel">
       <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
         <span>Available course statistics</span>
@@ -2059,14 +2241,11 @@ input, select, textarea {
         </tbody>
       </table>
     </div>
-
     <div id="stats-charts" class="grid-stats">
       <!-- JS will render charts here -->
     </div>
-
     <%- include('../partials/messageBox') %>
   </main>
-
   <script type="module" src="/js/student/statistics.js"></script>
 </body>
 </html>

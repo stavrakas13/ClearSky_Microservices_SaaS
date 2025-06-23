@@ -15,8 +15,24 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   try {
     const { data } = await getReviewStatus({ course_id, exam_period });
-    document.querySelector('textarea[readonly]').textContent =
-      data.instructor_message || 'No response yet.';
+    // If backend returns a message (no review found), show it
+    if (data && data.message) {
+      flash(data.message);
+      return;
+    }
+    // Fill all fields in the panel
+    document.getElementById('course_id').value = data.course_id ?? '';
+    document.getElementById('exam_period').value = data.exam_period ?? '';
+    document.getElementById('student_message').value = data.student_message ?? '';
+    document.getElementById('status').value = data.status ?? '';
+    document.getElementById('instructor_action').value = data.instructor_action ?? '';
+    document.getElementById('instructor_reply_message').value = data.instructor_reply_message ?? '';
+    document.getElementById('review_created_at').value = data.review_created_at
+      ? new Date(data.review_created_at).toLocaleString()
+      : '';
+    document.getElementById('reviewed_at').value = data.reviewed_at
+      ? new Date(data.reviewed_at).toLocaleString()
+      : '';
   } catch (err) {
     flash(err.message);
   }
