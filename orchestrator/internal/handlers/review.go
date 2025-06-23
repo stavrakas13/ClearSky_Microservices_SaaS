@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"time"
+	"github.com/google/uuid"
 
 	"orchestrator/internal/middleware"
 
@@ -17,7 +18,7 @@ import (
 func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[string]interface{}, error) {
 	log.Printf("[DEBUG] 🟡 helperRequest: routingKey=%s, payload=%s", routingKey, payload)
 
-	corrID := "abc123"
+	corrID := uuid.New().String()
 	replyQueue, err := ch.QueueDeclare("", false, true, true, false, nil)
 	if err != nil {
 		log.Printf("[DEBUG] 🟡 helperRequest: QueueDeclare error: %v", err)

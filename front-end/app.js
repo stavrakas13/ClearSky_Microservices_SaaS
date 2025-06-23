@@ -217,14 +217,19 @@ app.get('/instructor/post-initial', auth('instructor'), (req,res)=>res.render('i
 app.get('/instructor/post-final',   auth('instructor'), (req,res)=>res.render('instructor/postFinal',  { user:req.session.user, title:'Post Final' }));
 app.get('/instructor/review-list',  auth('instructor'), (req,res)=>res.render('instructor/reviewList', { user:req.session.user, title:'Review Requests' }));
 app.get('/instructor/reply',        auth('instructor'), (req,res)=>{
-  const request_id = req.query.req || '';
+  // Extract query parameters from URL
+  const course_id   = req.query.course   || '';
+  const exam_period = req.query.period   || '';
+  const user_id     = req.query.student  || '';
+  // Optionally, you could look up course_name/student_name from DB if needed
+
   res.render('instructor/replyForm',{
     user        : req.session.user,
     title       : 'Reply to Review Request',
-    request_id,
-    course_name : 'software II',
-    exam_period : 'spring 2025',
-    student_name: 'john doe',
+    request_id  : '', // not used, but kept for compatibility
+    course_name : course_id,
+    exam_period : exam_period,
+    student_name: user_id,
   });
 });
 app.get('/instructor/statistics',   auth('instructor'), (req,res)=>res.render('instructor/statistics', { user:req.session.user, title:'Statistics' }));
