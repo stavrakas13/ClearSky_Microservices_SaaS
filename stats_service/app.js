@@ -214,21 +214,21 @@ if (missingVars.length > 0) {
     }, { noAck: false });
   }
 
-async function fetchHistogram(field, connection, { classTitle, declarationPeriod, course }) {
+async function fetchHistogram(field, connection, { classTitle, declarationPeriod }) {
+  // round the float into integer bins 0–10
   const sql = `
-    SELECT ${field} AS grade, COUNT(*) AS count
-      FROM grading
-     WHERE classTitle = ?
-       AND declarationPeriod = ?
-       AND course = ?
-     GROUP BY ${field}
-     ORDER BY ${field}
+    SELECT
+      ROUND(\`${field}\`) AS grade,
+      COUNT(*)         AS count
+    FROM grading
+    WHERE classTitle     = ?
+      AND declarationPeriod = ?
+    GROUP BY ROUND(\`${field}\`)
+    ORDER BY ROUND(\`${field}\`)
   `;
-  const [rows] = await connection.execute(sql, [
-    classTitle, declarationPeriod, course
-  ]);
+  const [rows] = await connection.execute(sql, [ classTitle, declarationPeriod ]);
 
-  // ensure bins 0 through 10 exist
+  // build bins 0 through 10 and map counts
   const categories = Array.from({ length: 11 }, (_, i) => i);
   const data = categories.map(i => {
     const found = rows.find(r => +r.grade === i);
@@ -237,6 +237,8 @@ async function fetchHistogram(field, connection, { classTitle, declarationPeriod
 
   return { categories, data };
 }
+
+
 
 // … inside your async IIFE, after the submission-logs block:
 {
@@ -259,9 +261,9 @@ async function fetchHistogram(field, connection, { classTitle, declarationPeriod
       return channel.nack(msg, false, false);
     }
 
-    const { course, declarationPeriod, classTitle } = params;
-    if (!course || !declarationPeriod || !classTitle) {
-      const missing = ['course','declarationPeriod','classTitle']
+    const {declarationPeriod, classTitle } = params;
+    if (!declarationPeriod || !classTitle) {
+      const missing = ['declarationPeriod','classTitle']
         .filter(k => !params[k]).join(', ');
       reply({ status: 'error', message: `Missing fields: ${missing}` });
       return channel.ack(msg);
@@ -269,7 +271,7 @@ async function fetchHistogram(field, connection, { classTitle, declarationPeriod
 
     try {
       // Build histograms for total grade + Q1–Q4
-      const dims = ['grade','Q1','Q2','Q3','Q4'];
+      const dims = ['grade','Q1','Q2','Q3','Q4', 'Q5', 'Q6','Q7','Q8','Q9','Q10'];
       const result = {};
       for (let dim of dims) {
         result[dim] = await fetchHistogram(dim, connection, params);

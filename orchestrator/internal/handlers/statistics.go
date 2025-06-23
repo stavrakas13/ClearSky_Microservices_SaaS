@@ -189,7 +189,7 @@ type getGradesRequest struct {
 }
 
 // HandleGetGrades is your Gin handler
-func HandleGetGrades(ch *amqp.Channel) gin.HandlerFunc {
+func HandleGetDistributions(ch *amqp.Channel) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		// 1) bind JSON
