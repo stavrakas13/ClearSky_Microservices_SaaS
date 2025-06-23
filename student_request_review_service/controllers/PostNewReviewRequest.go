@@ -18,7 +18,7 @@ func PostNewReviewRequest(body map[string]interface{}) (string, error) {
 	// }
 
 	// extract data from input.
-	courseID, ok := body["course_id"]
+	courseID, ok := body["course_id"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing or invalid course_id")
 	}

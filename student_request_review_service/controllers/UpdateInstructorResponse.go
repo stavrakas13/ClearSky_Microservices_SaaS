@@ -19,7 +19,7 @@ func UpdateInstructorResponse(body map[string]interface{}) (string, error) {
 	//}
 
 	// get data from json
-	courseID, ok := body["course_id"]
+	courseID, ok := body["course_id"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing course_id")
 	}

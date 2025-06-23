@@ -64,8 +64,10 @@ func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[str
 // -> sends 2 events: student.postNewRequest & instructor.insertStudentRequest
 func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
 	// Get student info from JWT using middleware helpers
+
+	// IN STUDENT AND INSTRUCTOR SERVICE, USERID IS STUDENT ID, INSTRUCTORS ARE DEFINED BY COUSCES
 	studentID := middleware.GetStudentID(c)
-	userID := middleware.GetUserID(c)
+	userID := middleware.GetStudentID(c)
 
 	if !middleware.IsStudent(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Only students can submit review requests"})
@@ -78,7 +80,7 @@ func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
 	}
 
 	var req struct {
-		CourseID       int    `json:"course_id"`
+		CourseID       string `json:"course_id"`
 		StudentMessage string `json:"student_message"`
 		ExamPeriod     string `json:"exam_period"`
 	}
@@ -116,8 +118,10 @@ func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
 // -> sends 1 event: student.getRequestStatus
 func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
 	// Get student info from JWT using middleware helpers
+
+	// IN STUDENT AND INSTRUCTOR SERVICE, USERID IS STUDENT ID, INSTRUCTORS ARE DEFINED BY COUSCES
 	studentID := middleware.GetStudentID(c)
-	userID := middleware.GetUserID(c)
+	userID := middleware.GetStudentID(c)
 
 	if !middleware.IsStudent(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Only students can check request status"})
@@ -125,7 +129,7 @@ func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
 	}
 
 	var req struct {
-		CourseID   int    `json:"course_id"`
+		CourseID   string `json:"course_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -154,7 +158,7 @@ func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
 func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 	// receive message
 	var req struct {
-		CourseID               int    `json:"course_id"`
+		CourseID               string `json:"course_id"`
 		UserID                 string `json:"user_id"`
 		ExamPeriod             string `json:"exam_period"`
 		InstructorReplyMessage string `json:"instructor_reply_message"`
@@ -195,7 +199,7 @@ func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 func HandleGetRequestList(c *gin.Context, ch *amqp.Channel) {
 	// receive message
 	var req struct {
-		CourseID   int    `json:"course_id"`
+		CourseID   string `json:"course_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -223,7 +227,7 @@ func HandleGetRequestList(c *gin.Context, ch *amqp.Channel) {
 func HandleGetRequestInfo(c *gin.Context, ch *amqp.Channel) {
 	// receive message
 	var req struct {
-		CourseID   int    `json:"course_id"`
+		CourseID   string `json:"course_id"`
 		UserID     string `json:"user_id"`
 		ExamPeriod string `json:"exam_period"`
 	}

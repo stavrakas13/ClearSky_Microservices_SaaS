@@ -8,7 +8,7 @@ type ReviewRequest struct {
 
 type ReviewStruct struct {
 	Student_id               string     `json:"student_id"`
-	Course_id                int        `json:"course_id"`
+	Course_id                string     `json:"course_id"`
 	Exam_period              string     `json:"exam_period"`
 	Student_message          string     `json:"student_message"`
 	Status                   string     `json:"status"`

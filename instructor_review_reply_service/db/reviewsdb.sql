@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS reviews;
 CREATE TABLE IF NOT EXISTS reviews (
   review_id SERIAL PRIMARY KEY,
   student_id VARCHAR(15) NOT NULL,
-  course_id INT NOT NULL,
+  course_id VARCHAR(50) NOT NULL,
   exam_period VARCHAR(15) NOT NULL,
   student_message TEXT NOT NULL,
   status VARCHAR(15) DEFAULT 'pending' CHECK (status IN ('pending', 'reviewed')),
