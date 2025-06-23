@@ -3,10 +3,11 @@ package controllers
 import "time"
 
 type ReviewSummary struct {
-	StudentID       string `json:"student_id"`
-	CourseID        string `json:"course_id"`
-	Exam_period     string `json:"exam_period"`
-	Student_message string `json:"student_message"`
+	StudentID         string    `json:"student_id"`
+	CourseID          string    `json:"course_id"`
+	Exam_period       string    `json:"exam_period"`
+	Student_message   string    `json:"student_message"`
+	Review_created_at time.Time `json:"review_created_at"`
 }
 
 type ReviewStruct struct {

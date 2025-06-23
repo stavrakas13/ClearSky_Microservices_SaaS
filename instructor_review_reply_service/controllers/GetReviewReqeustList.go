@@ -63,7 +63,7 @@ func GetReviewRequestList(body map[string]interface{}) (string, error) {
 
 	var requestList []ReviewSummary
 	reviewQuery := `
-		SELECT student_id, course_id, exam_period, student_message
+		SELECT student_id, course_id, exam_period, student_message, review_created_at
 		FROM reviews
 		WHERE course_id = $1 AND status = 'pending'
 	`
@@ -79,7 +79,7 @@ func GetReviewRequestList(body map[string]interface{}) (string, error) {
 
 		for reviewRows.Next() {
 			var summary ReviewSummary
-			err := reviewRows.Scan(&summary.StudentID, &summary.CourseID, &summary.Exam_period, &summary.Student_message)
+			err := reviewRows.Scan(&summary.StudentID, &summary.CourseID, &summary.Exam_period, &summary.Student_message, &summary.Review_created_at)
 			if err != nil {
 				log.Printf("GetReviewRequestList: scan error: %v", err)
 				continue
