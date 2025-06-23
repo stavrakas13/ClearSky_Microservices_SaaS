@@ -3,9 +3,10 @@ package controllers
 import "time"
 
 type ReviewSummary struct {
-	StudentID   string `json:"student_id"`
-	CourseID    string `json:"course_id"`
-	Exam_period string `json:"exam_period"`
+	StudentID       string `json:"student_id"`
+	CourseID        string `json:"course_id"`
+	Exam_period     string `json:"exam_period"`
+	Student_message string `json:"student_message"`
 }
 
 type ReviewStruct struct {
