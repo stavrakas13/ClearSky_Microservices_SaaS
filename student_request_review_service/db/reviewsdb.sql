@@ -23,4 +23,4 @@ CREATE TABLE IF NOT EXISTS instructors (
 
 -- DEFAULT INSTRUCTOR
 
-INSERT INTO instructors (course_id, instructor_name) VALUES ('ΤΕΧΝΟΛΟΓΙΑ ΛΟΓΙΣΜΙΚΟΥ   (3205)', 'instructor')
+INSERT INTO instructors (course_id, instructor_name) VALUES ('ΤΕΧΝΟΛΟΓΙΑ ΛΟΓΙΣΜΙΚΟΥ   (3205)', 'instructor');
