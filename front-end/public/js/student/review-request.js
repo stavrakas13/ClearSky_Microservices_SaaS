@@ -1,7 +1,7 @@
 // front-end/public/js/student/review-request.js
 import { flash } from '../../script.js';
 import { postReviewRequest } from '../../api/student.js';
-
+  
 const form = document.querySelector('#student-review-request-form');
 if (!form) {
   console.error('Student review request form (#student-review-request-form) not found!');
