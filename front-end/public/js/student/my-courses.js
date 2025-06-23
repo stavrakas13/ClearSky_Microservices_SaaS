@@ -27,6 +27,12 @@ window.addEventListener('DOMContentLoaded', async () => {
       // course id for link building – fall back to courseName when missing
       const courseId = c.course_id ?? c.id ?? encodeURIComponent(courseName);
 
+      // Disable Ask review if status is closed
+      const askReviewBtn = status === 'open'
+        ? `<a href="/student/request?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
+               class="button">Ask review</a>`
+        : `<a class="button button--secondary" style="pointer-events:none;opacity:0.6;cursor:not-allowed;">Ask review</a>`;
+
       return `
         <tr ${status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
           <td>${courseName}</td>
@@ -36,8 +42,7 @@ window.addEventListener('DOMContentLoaded', async () => {
             <a href="/student/personal?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
                class="button">View grades</a>
 
-            <a href="/student/request?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
-               class="button${status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
+            ${askReviewBtn}
 
             <a href="/student/status?course=${courseId}&period=${encodeURIComponent(examPeriod)}"
                class="button${status === 'open' ? ' button--secondary' : ''}">Status</a>

@@ -17,6 +17,27 @@
         <%= course_name %>&nbsp;<%= exam_period %>&nbsp;<%= student_name %>
       </div>
 
+      <!-- Review request details -->
+      <div class="form-group" style="margin-bottom: 1em;">
+        <label>Course</label>
+        <input id="course_id" type="text" readonly style="width:180px;">
+        &nbsp;&nbsp;
+        <label>Exam Period</label>
+        <input id="exam_period" type="text" readonly style="width:120px;">
+        &nbsp;&nbsp;
+        <label>Student</label>
+        <input id="student_id" type="text" readonly style="width:120px;">
+      </div>
+      <div class="form-group" style="margin-bottom: 1em;">
+        <label>Student's message</label>
+        <textarea id="student_message" readonly style="width:100%;height:60px;"></textarea>
+      </div>
+      <div class="form-group" style="margin-bottom: 1em;">
+        <label>Requested at</label>
+        <input id="review_created_at" type="text" readonly style="width:200px;">
+      </div>
+      <!-- End review request details -->
+
       <!-- JS-driven reply form -->
       <form id="instructor-reply-form">
         <input type="hidden" name="req" value="<%= request_id %>" />

@@ -20,6 +20,16 @@ if (!form) {
       return;
     }
 
+    // Fetch course status to prevent review if closed
+    // (Assume you have a global or cached list, or fetch it here)
+    // For simplicity, fetch from DOM if available:
+    const row = document.querySelector(`tr[data-course-id="${course_id}"][data-exam-period="${exam_period}"]`);
+    let status = row ? row.querySelector('td:nth-child(3)')?.textContent?.trim() : null;
+    if (status && status.toLowerCase() === 'closed') {
+      flash('You cannot request a review for a closed course.');
+      return;
+    }
+
     try {
       await postReviewRequest({ course_id, exam_period, student_message });
       flash('Review request submitted!');
