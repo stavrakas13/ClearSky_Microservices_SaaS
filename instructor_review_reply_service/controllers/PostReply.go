@@ -3,47 +3,49 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"instructor_review_reply_service/db"
 )
 
+// PostReply processes instructor responses for a review request
 func PostReply(body map[string]interface{}) (string, error) {
+	log.Println("PostReply: invoked with body:", body)
 
-	// input send by orchestrator in json form like:
-	//{
-	//	"body": {
-	//	  "course_id": "101",
-	//	  "exam_period": "spring 2025",
-	//	  "user_id": "42"
-	//	  "instructor_reply_message": "NO WAY!"
-	//	  "instructor_action": "Denied"
-	//	}
-	//}
-
+	// extract fields
 	courseID, ok := body["course_id"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing course_id")
+		err := fmt.Errorf("missing or invalid course_id")
+		log.Println("PostReply: error extracting course_id:", err)
+		return "", err
 	}
-
 	userID, ok := body["user_id"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing user_id")
+		err := fmt.Errorf("missing or invalid user_id")
+		log.Println("PostReply: error extracting user_id:", err)
+		return "", err
 	}
-
 	examPeriod, ok := body["exam_period"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing exam_period")
+		err := fmt.Errorf("missing or invalid exam_period")
+		log.Println("PostReply: error extracting exam_period:", err)
+		return "", err
 	}
 
 	instructorReply, ok := body["instructor_reply_message"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing or invalid instructor_reply_message")
+		err := fmt.Errorf("missing or invalid instructor_reply_message")
+		log.Println("PostReply: error extracting instructor_reply_message:", err)
+		return "", err
 	}
-
 	instructorAction, ok := body["instructor_action"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing or invalid instructor_action")
+		err := fmt.Errorf("missing or invalid instructor_action")
+		log.Println("PostReply: error extracting instructor_action:", err)
+		return "", err
 	}
 
+	log.Printf("PostReply: updating review for student_id=%s, course_id=%s, exam_period=%s", userID, courseID, examPeriod)
+	// update statement
 	query := `
 		UPDATE reviews 
 		SET instructor_reply_message = $1,
@@ -52,61 +54,31 @@ func PostReply(body map[string]interface{}) (string, error) {
 			reviewed_at = CURRENT_TIMESTAMP
 		WHERE student_id = $3 AND course_id = $4 AND exam_period = $5	
 	`
-
 	result, err := db.DB.Exec(query, instructorReply, instructorAction, userID, courseID, examPeriod)
 	if err != nil {
+		log.Printf("PostReply: update error: %v", err)
 		return "", fmt.Errorf("failed to update review: %v", err)
 	}
 	rowsAffected, _ := result.RowsAffected()
+	log.Printf("PostReply: rows affected: %d", rowsAffected)
 	if rowsAffected == 0 {
-		failResponse := map[string]interface{}{
+		log.Println("PostReply: no rows updated, possible invalid identifiers")
+		failResponse := map[string]interface{}{ 
 			"message": "Failed to update instructor response in database on student end.",
 		}
-		failRespBytes, _ := json.Marshal(failResponse)
+		failRespBytes, _ := json.Marshal(failResponse) // nolint: errcheck
+		log.Println("PostReply: returning failure response to orchestrator")
 		return string(failRespBytes), nil
 	}
 
-	response := map[string]interface{}{
+	successResponse := map[string]interface{}{ 
 		"message": "Instructor response updated successfully on instructor end.",
 	}
-	respBytes, _ := json.Marshal(response)
+	respBytes, err := json.Marshal(successResponse)
+	if err != nil {
+		log.Printf("PostReply: response marshal error: %v", err)
+		return "", fmt.Errorf("failed to marshal response: %v", err)
+	}
+	log.Println("PostReply: returning success response to orchestrator")
 	return string(respBytes), nil
-
 }
-
-/* func PostReply(c *gin.Context) {
-	reviewIDStr := c.Param("review_id")
-	reviewID, err := strconv.Atoi(reviewIDStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid review ID"})
-		return
-	}
-
-	// Ginstructor reply from request body
-	var reqBody InstructorReply
-	if err := c.ShouldBindJSON(&reqBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON body"})
-		return
-	}
-	query := `
-		UPDATE reviews
-		SET instructor_reply_message = $1,
-			instructor_action = $2,
-			status = 'reviewed',
-			reviewed_at = CURRENT_TIMESTAMP
-		WHERE review_id = $3
-	`
-	_, err = db.DB.Exec(query, reqBody.InstructorReply, reqBody.InstructorAction, reviewID)
-	if err != nil {
-		log.Println("Update error:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update review"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"message":                  "Reply submitted successfully.",
-		"review_id":                reviewID,
-		"instructor_reply_message": reqBody.InstructorReply,
-		"instructor_action":        reqBody.InstructorAction,
-	})
-}
-*/

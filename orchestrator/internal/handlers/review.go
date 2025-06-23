@@ -3,29 +3,30 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
+	"log"
 	"net/http"
-	"orchestrator/internal/middleware"
 	"time"
+
+	"orchestrator/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// Assume all data received from json.
-
 // helperRequest sends the payload to the given routing key on ExchangeKey and waits for a JSON response
 func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[string]interface{}, error) {
-	fmt.Printf("Outgoing payload: %s\n routing key: %s\n", payload, routingKey)
-
+	log.Printf("helperRequest: routingKey=%s, payload=%s", routingKey, payload)
+	
 	corrID := "abc123"
 	replyQueue, err := ch.QueueDeclare("", false, true, true, false, nil)
 	if err != nil {
+		log.Printf("helperRequest: QueueDeclare error: %v", err)
 		return nil, err
 	}
 
 	msgs, err := ch.Consume(replyQueue.Name, "", true, false, false, false, nil)
 	if err != nil {
+		log.Printf("helperRequest: Consume error: %v", err)
 		return nil, err
 	}
 
@@ -42,6 +43,7 @@ func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[str
 		},
 	)
 	if err != nil {
+		log.Printf("helperRequest: Publish error: %v", err)
 		return nil, err
 	}
 
@@ -52,29 +54,36 @@ func helperRequest(ch *amqp.Channel, routingKey string, payload []byte) (map[str
 			if msg.CorrelationId == corrID {
 				var response map[string]interface{}
 				err := json.Unmarshal(msg.Body, &response)
+				if err != nil {
+					log.Printf("helperRequest: Unmarshal error: %v", err)
+				}
+				log.Printf("helperRequest: received response: %+v", response)
 				return response, err
 			}
 		case <-timeout:
+			log.Printf("helperRequest: timeout waiting for response")
 			return nil, errors.New("timeout waiting for response")
 		}
 	}
 }
 
-// handleReviewRequested processes new request events
+// HandlePostNewRequest processes new request events
 // -> sends 2 events: student.postNewRequest & instructor.insertStudentRequest
 func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
-	// Get student info from JWT using middleware helpers
+	log.Printf("HandlePostNewRequest invoked")
 
-	// IN STUDENT AND INSTRUCTOR SERVICE, USERID IS STUDENT ID, INSTRUCTORS ARE DEFINED BY COUSCES
+	// Get student info from JWT using middleware helpers
 	studentID := middleware.GetStudentID(c)
 	userID := middleware.GetStudentID(c)
 
 	if !middleware.IsStudent(c) {
+		log.Printf("HandlePostNewRequest: forbidden, not a student")
 		c.JSON(http.StatusForbidden, gin.H{"error": "Only students can submit review requests"})
 		return
 	}
 
 	if studentID == "" {
+		log.Printf("HandlePostNewRequest: missing student ID")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Student ID is required for review requests"})
 		return
 	}
@@ -85,45 +94,51 @@ func HandlePostNewRequest(c *gin.Context, ch *amqp.Channel) {
 		ExamPeriod     string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandlePostNewRequest: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("HandlePostNewRequest: payload struct %+v", req)
 
-	// Build payload with student info from JWT
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period":     req.ExamPeriod,
 			"course_id":       req.CourseID,
 			"user_id":         userID,
-			"student_id":      studentID, // Add student_id from JWT
+			"student_id":      studentID,
 			"student_message": req.StudentMessage,
 		},
 	})
 
 	responseStudent, err := helperRequest(ch, "student.postNewRequest", payload)
 	if err != nil {
+		log.Printf("HandlePostNewRequest: student.postNewRequest error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandlePostNewRequest: responseStudent %+v", responseStudent)
 	c.JSON(http.StatusOK, gin.H{"data": responseStudent})
+
 	responseInstructor, err := helperRequest(ch, "instructor.insertStudentRequest", payload)
 	if err != nil {
+		log.Printf("HandlePostNewRequest: instructor.insertStudentRequest error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandlePostNewRequest: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
 
-// handleGetRequestStatus processes student sees request status events
+// HandleGetRequestStatus processes student sees request status events
 // -> sends 1 event: student.getRequestStatus
 func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
-	// Get student info from JWT using middleware helpers
+	log.Printf("HandleGetRequestStatus invoked")
 
-	// IN STUDENT AND INSTRUCTOR SERVICE, USERID IS STUDENT ID, INSTRUCTORS ARE DEFINED BY COUSCES
 	studentID := middleware.GetStudentID(c)
 	userID := middleware.GetStudentID(c)
 
 	if !middleware.IsStudent(c) {
+		log.Printf("HandleGetRequestStatus: forbidden, not a student")
 		c.JSON(http.StatusForbidden, gin.H{"error": "Only students can check request status"})
 		return
 	}
@@ -133,30 +148,36 @@ func HandleGetRequestStatus(c *gin.Context, ch *amqp.Channel) {
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandleGetRequestStatus: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("HandleGetRequestStatus: payload struct %+v", req)
 
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period": req.ExamPeriod,
 			"course_id":   req.CourseID,
 			"user_id":     userID,
-			"student_id":  studentID, // Add student_id from JWT
+			"student_id":  studentID,
 		},
 	})
+
 	responseStudent, err := helperRequest(ch, "student.getRequestStatus", payload)
 	if err != nil {
+		log.Printf("HandleGetRequestStatus: error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandleGetRequestStatus: responseStudent %+v", responseStudent)
 	c.JSON(http.StatusOK, gin.H{"data": responseStudent})
 }
 
-// handlePostResponse processes responses on review requests
+// HandlePostResponse processes responses on review requests
 // -> sends 2 events: student.updateInstructorResponse & instructor.postResponse
 func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
-	// receive message
+	log.Printf("HandlePostResponse invoked")
+
 	var req struct {
 		CourseID               string `json:"course_id"`
 		UserID                 string `json:"user_id"`
@@ -165,12 +186,13 @@ func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 		InstructorAction       string `json:"instructor_action"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandlePostResponse: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("HandlePostResponse: payload struct %+v", req)
 
-	// add message payload
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period":              req.ExamPeriod,
 			"course_id":                req.CourseID,
@@ -182,72 +204,87 @@ func HandlePostResponse(c *gin.Context, ch *amqp.Channel) {
 
 	responseStudent, err := helperRequest(ch, "student.updateInstructorResponse", payload)
 	if err != nil {
+		log.Printf("HandlePostResponse: student.updateInstructorResponse error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandlePostResponse: responseStudent %+v", responseStudent)
 	c.JSON(http.StatusOK, gin.H{"data": responseStudent})
+
 	responseInstructor, err := helperRequest(ch, "instructor.postResponse", payload)
 	if err != nil {
+		log.Printf("HandlePostResponse: instructor.postResponse error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandlePostResponse: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
 
-// handleGetRequestList processes instructor get list of pending requests
+// HandleGetRequestList processes instructor get list of pending requests
 // -> sends 1 event: instructor.getRequestsList
 func HandleGetRequestList(c *gin.Context, ch *amqp.Channel) {
-	// receive message
+	log.Printf("HandleGetRequestList invoked")
+
 	var req struct {
 		CourseID   string `json:"course_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandleGetRequestList: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("HandleGetRequestList: payload struct %+v", req)
 
-	// add message payload
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period": req.ExamPeriod,
 			"course_id":   req.CourseID,
 		},
 	})
+
 	responseInstructor, err := helperRequest(ch, "instructor.getRequestsList", payload)
 	if err != nil {
+		log.Printf("HandleGetRequestList: error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandleGetRequestList: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }
 
-// handleGetRequestInfo processes instructor sees request details
+// HandleGetRequestInfo processes instructor sees request details
 // -> sends 1 event: instructor.getRequestInfo
 func HandleGetRequestInfo(c *gin.Context, ch *amqp.Channel) {
-	// receive message
+	log.Printf("HandleGetRequestInfo invoked")
+
 	var req struct {
 		CourseID   string `json:"course_id"`
 		UserID     string `json:"user_id"`
 		ExamPeriod string `json:"exam_period"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("HandleGetRequestInfo: bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+	log.Printf("HandleGetRequestInfo: payload struct %+v", req)
 
-	// add message payload
-	payload, _ := json.Marshal(map[string]interface{}{
+	payload, _ := json.Marshal(map[string]interface{}{ // nolint: errcheck
 		"body": map[string]interface{}{
 			"exam_period": req.ExamPeriod,
 			"course_id":   req.CourseID,
 			"user_id":     req.UserID,
 		},
 	})
+
 	responseInstructor, err := helperRequest(ch, "instructor.getRequestInfo", payload)
 	if err != nil {
+		log.Printf("HandleGetRequestInfo: error: %v", err)
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("HandleGetRequestInfo: responseInstructor %+v", responseInstructor)
 	c.JSON(http.StatusOK, gin.H{"data": responseInstructor})
 }

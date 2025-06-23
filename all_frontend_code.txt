@@ -73,40 +73,43 @@ app.get('/auth/google/login', (req, res) => {
 
 // Handle successful Google login callback
 app.get('/auth/google/callback', (req, res) => {
-  // This route is called when Google Auth Service redirects back
-  // The JWT should already be in a cookie set by Google Auth Service
+  console.log('Google callback received:', req.query);
   
   // Check if we have a JWT cookie
   const token = req.cookies.token;
-  if (token) {
-    // Set session based on the JWT token
-    // For now, we'll default to institution_representative for Google users
+  const role = req.query.role || 'institution_representative';
+  const email = req.query.email;
+  
+  if (token && req.query.google_login === 'success') {
+    // Set session for Google user
     req.session.user = {
-      username: 'google_user',
-      role: 'institution_representative'
+      username: email || 'google_user',
+      role: role
     };
-    res.redirect('/institution?google_login=success');
+    
+    console.log('Set session user:', req.session.user);
+    
+    // Redirect based on role
+    let redirectPath = '/';
+    switch (role) {
+      case 'student':
+        redirectPath = '/student';
+        break;
+      case 'instructor':
+        redirectPath = '/instructor';
+        break;
+      case 'institution_representative':
+        redirectPath = '/institution';
+        break;
+      default:
+        redirectPath = '/';
+    }
+    
+    res.redirect(redirectPath);
   } else {
+    console.log('Google login failed - no token or success flag');
     res.redirect('/login?error=google_login_failed');
   }
-});
-
-// Add middleware to check for Google login and set session
-app.use((req, res, next) => {
-  // Check for JWT cookie and google_login parameter
-  if (req.query.google_login === 'success' && req.cookies && req.cookies.token && !req.session.user) {
-    // This is a Google login callback, validate the JWT and set session
-    try {
-      // For now, we'll trust the cookie and set default Google user session
-      req.session.user = {
-        username: 'google_user',
-        role: 'institution_representative'
-      };
-    } catch (error) {
-      console.error('Error processing Google login:', error);
-    }
-  }
-  next();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -289,39 +292,59 @@ export const uploadInitialGrades = file => {
 };
 
 ===== front-end/public/api/instructor.js =====
-// public/api/instructor.js
+// front-end/public/api/instructor.js
 import { request } from './_request.js';
 
-/**
- * Fetch pending review requests for the current instructor.
- * orchestrator: PATCH /instructor/review-list
- */
-export const getPendingReviews = ({ course_id, exam_period }) =>
-  request('/instructor/review-list', {
-    method : 'PATCH',
-    body   : { course_id, exam_period }
-  });
+/*-------------------------------------------------------------*
+ | Utilities                                                   |
+ *-------------------------------------------------------------*/
 
 /**
- * Send an instructor’s reply to a specific student request.
- * orchestrator: PATCH /instructor/reply
+ * Strip undefined, null, or empty‐string values from an object,
+ * returning a *new* object that only contains “meaningful” keys.
  */
-export const postInstructorReply = ({
-  user_id,                // student’s user_id from URL
-  course_id,
-  exam_period,
-  instructor_reply_message,
-  instructor_action
-}) =>
+const prune = (obj = {}) =>
+  Object.fromEntries(
+    Object.entries(obj).filter(
+      ([, v]) => v !== undefined && v !== null && v !== ''
+    )
+  );
+
+/*-------------------------------------------------------------*
+ | API calls                                                   |
+ *-------------------------------------------------------------*/
+
+/**
+ * Get pending-review requests for an instructor.
+ * PATCH /instructor/review-list
+ *
+ * @param {{course_id?:string, exam_period?:string}=} filters
+ * @returns {Promise<Array>}
+ */
+export const getPendingReviews = async (filters = {}) => {
+  const res = await request('/instructor/review-list', {
+    method: 'PATCH',
+    body: prune(filters)           // <-- ⬅⬅⬅  IMPORTANT LINE
+  });
+  return res?.data?.data ?? res?.data ?? res;
+};
+
+/**
+ * Send an instructor reply.
+ * PATCH /instructor/reply
+ *
+ * @param {{
+ *   user_id: string,
+ *   course_id: string,
+ *   exam_period?: string,
+ *   instructor_reply_message: string,
+ *   instructor_action: string
+ * }} payload
+ */
+export const postInstructorReply = (payload) =>
   request('/instructor/reply', {
-    method : 'PATCH',
-    body   : {
-      user_id,
-      course_id,
-      exam_period,
-      instructor_reply_message,
-      instructor_action
-    }
+    method: 'PATCH',
+    body: prune(payload)           // <-- ⬅⬅⬅  IMPORTANT LINE
   });
 
 ===== front-end/public/api/personal.js =====
@@ -329,30 +352,28 @@ export const postInstructorReply = ({
 import { request } from './_request.js';
 
 /**
- * Fetch all courses & periods for the logged-in student.
- * (orchestrator: GET /personal/grades → returns { status, data: [...] })
+ * Fetch all past/future courses & periods for the logged-in student.
+ * Orchestrator: GET /personal/grades → { status, data: […] }
  */
 export const getStudentCourses = async () => {
   const { data } = await request('/personal/grades');
-  return data;
+  return Array.isArray(data) ? data : [];
 };
 
 /**
- * Fetch personal grades for a given course and (optionally) exam period.
- * If exam_period is omitted the backend will return the most recent one.
- *
- * @param {{ course_id: string|number, exam_period?: string }} params
+ * Fetch the grade entries for a given course & exam period.
+ * Orchestrator: GET /personal/grades?course_id=…&exam_period=…
  */
 export const getPersonalGrades = async ({ course_id, exam_period }) => {
   const qs = new URLSearchParams();
-  if (course_id   != null) qs.append('course_id',   course_id);
-  if (exam_period != null) qs.append('exam_period', exam_period);
+  if (course_id)   qs.append('course_id',   course_id);
+  if (exam_period) qs.append('exam_period', exam_period);
 
-  // empty query-string → “/personal/grades”
   const suffix = qs.toString() ? `?${qs}` : '';
   const { data } = await request(`/personal/grades${suffix}`);
-  return data;
+  return Array.isArray(data) ? data : [];
 };
+
 ===== front-end/public/api/_request.js =====
 // front-end/public/api/_request.js
 
@@ -783,21 +804,26 @@ changeForm.addEventListener('submit', async e => {
 });
 
 ===== front-end/public/js/instructor/reply.js =====
-// public/js/instructor/reply.js
+// front-end/public/js/instructor/reply.js
 import { flash } from '../../script.js';
 import { postInstructorReply } from '../../api/instructor.js';
 
 const form = document.querySelector('#instructor-reply-form');
 
-form.addEventListener('submit', async e => {
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const params       = new URLSearchParams(location.search);
-  const user_id      = params.get('req');                // the student’s ID
-  const course_id    = 'software II';                    // or pull from hidden input
-  const exam_period  = 'spring 2025';                    // likewise
+  const qs = new URLSearchParams(location.search);
+  const user_id     = qs.get('student');
+  const course_id   = qs.get('course');
+  const exam_period = qs.get('period');          // may be null
   const instructor_reply_message = form.message.value.trim();
   const instructor_action        = form.decision.value;
+
+  if (!user_id || !course_id) {
+    flash('Missing URL parameters – please navigate from the review list.');
+    return;
+  }
 
   try {
     await postInstructorReply({
@@ -808,121 +834,162 @@ form.addEventListener('submit', async e => {
       instructor_action
     });
     flash('Reply sent!');
-    // Optionally redirect back to the list:
-    // window.location.href = '/instructor/review-list';
+    /* Redirect back to the list after a short toast. */
+    setTimeout(() => (window.location.href = '/instructor/review-list'), 1200);
   } catch (err) {
-    flash(err.message);
+    flash(err.message || 'Failed to send reply');
   }
 });
 
 ===== front-end/public/js/instructor/review-list.js =====
-// public/js/instructor/review-list.js
+// front-end/public/js/instructor/review-list.js
 import { flash } from '../../script.js';
 import { getPendingReviews } from '../../api/instructor.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const payload = { course_id: 'software II', exam_period: 'spring 2025' };
-    // API now returns the array directly
-    const reviews = await getPendingReviews(payload);
+    /* 👉 No blank strings are sent thanks to prune() inside the API helper. */
+    const reviews = await getPendingReviews();   // ← nothing passed
 
     const tbody = document.querySelector('table tbody');
+    if (!reviews.length) {
+      tbody.innerHTML =
+        '<tr><td colspan="4" style="text-align:center;">No pending requests 💤</td></tr>';
+      return;
+    }
+
     tbody.innerHTML = reviews
-      .map(r => `
-        <tr>
-          <td>${r.course_name}</td>
-          <td>${r.exam_period}</td>
-          <td>${r.student}</td>
-          <td>
-            <a class="button" href="/instructor/reply?req=${r.id}">Reply</a>
-          </td>
-        </tr>
-      `)
+      .map((r) => {
+        const qs = new URLSearchParams({
+          student: r.student_id,
+          course: r.course_id,
+          period: r.exam_period ?? ''
+        }).toString();
+
+        return `
+          <tr>
+            <td>${r.course_id}</td>
+            <td>${r.exam_period ?? '-'}</td>
+            <td>${r.student_id}</td>
+            <td>
+              <a class="button" href="/instructor/reply?${qs}">Reply</a>
+            </td>
+          </tr>
+        `;
+      })
       .join('');
   } catch (err) {
-    flash(err.message);
+    flash(err.message || 'Failed to fetch review list');
   }
 });
 
 ===== front-end/public/js/student/my-courses.js =====
 // front-end/public/js/student/my-courses.js
+//
+// Shows all courses for the logged-in student and builds action links
+// that carry ONLY the numeric course_id (e.g. 3205).
+// ────────────────────────────────────────────────────────────────────
 import { flash } from '../../script.js';
 import { getStudentCourses } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const courses = await getStudentCourses();     // API now returns the array directly
+    const courses = await getStudentCourses();         // array from /personal/grades
+    const tbody   = document.querySelector('table tbody');
 
-    const tbody = document.querySelector('table tbody');
-    tbody.innerHTML = courses
-      .map(c => `
-        <tr ${c.status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
-          <td>${c.course_name}</td>
-          <td>${c.exam_period}</td>
-          <td>${c.status}</td>
+    if (!courses.length) {
+      tbody.innerHTML = `
+        <tr><td colspan="4" style="text-align:center;">No courses found.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = courses.map(c => {
+      /* ── 1) Resolve display fields ─────────────────────────────── */
+      const courseName = c.classTitle        ?? c.course_name  ?? '—';
+      const examPeriod = c.declarationPeriod ?? c.exam_period  ?? '—';
+
+      let status = c.status ?? c.grading_status;
+      if (typeof status === 'number') status = status === 0 ? 'open' : 'closed';
+      if (!status) status = '—';
+
+      /* ── 2) Derive a clean numeric course-id for links ─────────── */
+      const rawId = c.course_id ?? c.id ?? courseName;  // whatever we’ve got
+      const numericId =
+        String(rawId).match(/\((\d+)\)/)?.[1]   // digits inside ( ... )
+        || String(rawId).replace(/\D/g, '')     // else keep any digits
+        || encodeURIComponent(rawId);           // fallback
+
+      /* ── 3) Build row ──────────────────────────────────────────── */
+      return `
+        <tr ${status === 'open' ? 'style="background:#e6e7ea;"' : ''}>
+          <td>${courseName}</td>
+          <td>${examPeriod}</td>
+          <td>${status}</td>
           <td>
-            <a href="/student/personal?course=${c.id}&period=${encodeURIComponent(c.exam_period)}" class="button">View grades</a>
-            <a href="/student/request?course=${c.id}&period=${encodeURIComponent(c.exam_period)}"  class="button${c.status !== 'open' ? ' button--secondary' : ''}">Ask review</a>
-            <a href="/student/status?course=${c.id}&period=${encodeURIComponent(c.exam_period)}"   class="button${c.status === 'open' ? ' button--secondary' : ''}">Status</a>
+            <a class="button"
+               href="/student/personal?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
+              View grades
+            </a>
+
+            <a class="button${status !== 'open' ? ' button--secondary' : ''}"
+               href="/student/request?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
+              Ask review
+            </a>
+
+            <a class="button${status === 'open' ? ' button--secondary' : ''}"
+               href="/student/status?course=${numericId}&period=${encodeURIComponent(examPeriod)}">
+              Status
+            </a>
           </td>
-        </tr>
-      `)
-      .join('');
+        </tr>`;
+    }).join('');
   } catch (err) {
-    flash(err.message);
+    flash(err.message || 'Failed to load courses');
   }
 });
 
 ===== front-end/public/js/student/personal.js =====
 // front-end/public/js/student/personal.js
-//
-// Show the logged-in student's grades for one course / period
-// ─────────────────────────────────────────────────────────────
 import { flash } from '../../script.js';
 import { getPersonalGrades } from '../../api/personal.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   const params      = new URLSearchParams(location.search);
   const course_id   = params.get('course');
-  const exam_period = params.get('period');       // may be null
+  const exam_period = params.get('period');
 
-  // Visiting /student/personal directly?  Send them back to the course list.
   if (!course_id) {
     flash('Please pick a course first');
-    window.location.href = '/student/my-courses';
+    location.href = '/student/my-courses';
     return;
   }
 
   try {
-    // Fetch an array of grade entries
-    const gradesArray = await getPersonalGrades({ course_id, exam_period });
+    const grades = await getPersonalGrades({ course_id, exam_period });
+    const tbody  = document.querySelector('table tbody');
 
-    const tbody = document.querySelector('table tbody');
-    // Map each grade entry to a table row
-    tbody.innerHTML = gradesArray.length
-      ? gradesArray
-          .map(g => {
-            // Accept both camelCase and snake_case keys
-            const declarationPeriod =
-              g.declarationPeriod ?? g.declaration_period ?? '—';
-            const classTitle =
-              g.classTitle        ?? g.class_title        ?? '—';
-            const grading_status =
-              g.grading_status    ?? g.gradingStatus      ?? '—';
-            const grade =
-              g.grade             ?? g.score              ?? '—';
+    if (!grades.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" style="text-align:center;">No grades found.</td>
+        </tr>`;
+      return;
+    }
 
-            return `
-              <tr>
-                <td>${declarationPeriod}</td>
-                <td>${classTitle}</td>
-                <td>${grading_status}</td>
-                <td>${grade}</td>
-              </tr>
-            `;
-          })
-          .join('')
-      : '<tr><td colspan="4" style="text-align:center;">No grades found.</td></tr>';
+    tbody.innerHTML = grades.map(g => {
+      const period = g.declarationPeriod ?? g.declaration_period ?? '—';
+      const course = g.classTitle        ?? g.class_title        ?? '—';
+      const status = g.gradingStatus     ?? g.grading_status     ?? '—';
+      const score  = g.grade             ?? g.score              ?? '—';
+
+      return `
+        <tr>
+          <td>${period}</td>
+          <td>${course}</td>
+          <td>${status}</td>
+          <td>${score}</td>
+        </tr>`;
+    }).join('');
   } catch (err) {
     flash(err.message || 'Failed to load grades');
   }
@@ -930,6 +997,10 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 ===== front-end/public/js/student/review-request.js =====
 // front-end/public/js/student/review-request.js
+//
+// Submits a grade-review request. Ensures `course_id` contains
+// only the numeric part before sending it to /student/reviewRequest.
+// ────────────────────────────────────────────────────────────────────
 import { flash } from '../../script.js';
 import { postReviewRequest } from '../../api/student.js';
 
@@ -940,22 +1011,30 @@ if (!form) {
   form.addEventListener('submit', async e => {
     e.preventDefault();
 
-    const params          = new URLSearchParams(location.search);
-    const course_id       = params.get('course');
-    const exam_period     = params.get('period') || undefined;   // allow backend to choose
+    const params = new URLSearchParams(location.search);
+
+    /* ── 1) Extract & sanitise course_id ─────────────────────────── */
+    let course_id = params.get('course');                 // could be “ΤΕΧΝ… (3205)”
+    if (course_id) {
+      course_id = course_id.match(/\((\d+)\)/)?.[1]       // digits inside (...)
+               || course_id.replace(/\D/g, '');           // any digits
+    }
+
+    const exam_period     = params.get('period') || undefined;
     const student_message = form.message.value.trim();
 
     if (!course_id) {
-      flash('Please pick a course first');
-      window.location.href = '/student/my-courses';
+      flash('Course id missing – please navigate from “My courses” page.');
+      location.href = '/student/my-courses';
       return;
     }
 
     try {
       await postReviewRequest({ course_id, exam_period, student_message });
       flash('Review request submitted!');
+      form.reset();
     } catch (err) {
-      flash(err.message);
+      flash(err.message || 'Failed to submit review request');
     }
   });
 }
@@ -1854,17 +1933,14 @@ input, select, textarea {
         </tr>
       </thead>
       <tbody>
-        <!-- JS (personal.js) will inject one <tr> per grade:
-             first <td> = declarationPeriod (Component)
-             second <td> = courseName (Course Name)
-             third <td> = gradingStatus (Grading Status)
-             fourth <td> = grade (Score) -->
+        <!-- Rows will be injected by personal.js -->
       </tbody>
     </table>
 
     <%- include('../partials/messageBox') %>
   </main>
 
+  <!-- Make sure this path matches where your bundler/static server serves it -->
   <script type="module" src="/js/student/personal.js"></script>
 </body>
 </html>

@@ -3,89 +3,72 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"instructor_review_reply_service/db"
 )
 
-func GetReviewReqeustList(body map[string]interface{}) (string, error) {
-	// input send by orchestrator in json form like:
-	// {
-	//   "body": {
-	//     "course_id": "101"
-	//	 }
-	// }
+func GetReviewRequestList(body map[string]interface{}) (string, error) {
+	log.Println("GetReviewRequestList: invoked with body:", body)
 
 	// extract data from input.
 	courseID, ok := body["course_id"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing course_id")
+		err := fmt.Errorf("missing or invalid course_id")
+		log.Println("GetReviewRequestList: error extracting course_id:", err)
+		return "", err
 	}
+	log.Printf("GetReviewRequestList: querying pending reviews for course_id=%s", courseID)
+
 	query := `
-		SELECT student_id, course_id, review_created_at 
-		FROM reviews 
+		SELECT student_id, course_id, review_created_at
+		FROM reviews
 		WHERE course_id = $1 AND status = 'pending'
-		`
+	`
 	rows, err := db.DB.Query(query, courseID)
 	if err != nil {
+		log.Printf("GetReviewRequestList: query error: %v", err)
 		return "", fmt.Errorf("query error: %v", err)
 	}
 	defer rows.Close()
 
-	var requestlist []ReviewSummary
+	var requestList []ReviewSummary
 	for rows.Next() {
 		var summary ReviewSummary
 		err := rows.Scan(&summary.StudentID, &summary.CourseID, &summary.ReviewCreatedAt)
 		if err != nil {
-			fmt.Println("Scan error:", err)
+			log.Printf("GetReviewRequestList: scan error: %v", err)
 			continue
 		}
-		requestlist = append(requestlist, summary)
+		requestList = append(requestList, summary)
+		log.Printf("GetReviewRequestList: found request: %+v", summary)
 	}
-	if len(requestlist) == 0 {
-		emptyResponse := map[string]interface{}{
+
+	if err = rows.Err(); err != nil {
+		log.Printf("GetReviewRequestList: rows iteration error: %v", err)
+	}
+
+	if len(requestList) == 0 {
+		log.Println("GetReviewRequestList: no pending requests found")
+		emptyResponse := map[string]interface{}{ 
 			"message": "No pending review requests found.",
 			"data":    []ReviewSummary{},
 		}
-		respBytes, _ := json.Marshal(emptyResponse)
+		respBytes, _ := json.Marshal(emptyResponse) // nolint: errcheck
+		log.Println("GetReviewRequestList: returning empty response")
 		return string(respBytes), nil
 	}
 
-	successResponse := map[string]interface{}{
+	log.Printf("GetReviewRequestList: total pending requests: %d", len(requestList))
+	successResponse := map[string]interface{}{ 
 		"message": "Pending review requests retrieved successfully.",
-		"data":    requestlist,
+		"data":    requestList,
 	}
 	respBytes, err := json.Marshal(successResponse)
 	if err != nil {
+		log.Printf("GetReviewRequestList: response marshal error: %v", err)
 		return "", fmt.Errorf("failed to marshal response: %v", err)
 	}
+	log.Println("GetReviewRequestList: returning success response")
 
 	return string(respBytes), nil
 }
-
-/* func GetReviewReqeustList(c *gin.Context) {
-
-	query := `SELECT student_id, course_id, review_created_at FROM reviews WHERE status = 'pending'`
-	rows, err := db.DB.Query(query)
-	if err != nil {
-		log.Println("Query error:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
-		return
-	}
-	defer rows.Close()
-
-	var requestlist []ReviewSummary
-	for rows.Next() {
-		var summary ReviewSummary
-		err := rows.Scan(&summary.StudentID, &summary.CourseID, &summary.ReviewCreatedAt)
-		if err != nil {
-			log.Println("Scan error:", err)
-			continue
-		}
-		requestlist = append(requestlist, summary)
-	}
-	if len(requestlist) == 0 {
-		c.JSON(http.StatusOK, gin.H{"message": "No pending review requests"})
-	} else {
-		c.JSON(http.StatusOK, requestlist)
-	}
-}
-*/
