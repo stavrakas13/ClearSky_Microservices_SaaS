@@ -1,53 +1,54 @@
 // front-end/public/api/instructor.js
 import { request } from './_request.js';
 
+/*-------------------------------------------------------------*
+ | Utilities                                                   |
+ *-------------------------------------------------------------*/
+
 /**
- * Fetch the list of pending review requests for the instructor.
- * Endpoint: PATCH /instructor/review-list
- *
- * @param {Object} payload
- * @param {string=} payload.course_id
- * @param {string=} payload.exam_period
- * @returns {Promise<Array>}  Array of review objects
+ * Strip undefined, null, or empty‐string values from an object,
+ * returning a *new* object that only contains “meaningful” keys.
  */
-export const getPendingReviews = async ({ course_id, exam_period } = {}) => {
+const prune = (obj = {}) =>
+  Object.fromEntries(
+    Object.entries(obj).filter(
+      ([, v]) => v !== undefined && v !== null && v !== ''
+    )
+  );
+
+/*-------------------------------------------------------------*
+ | API calls                                                   |
+ *-------------------------------------------------------------*/
+
+/**
+ * Get pending-review requests for an instructor.
+ * PATCH /instructor/review-list
+ *
+ * @param {{course_id?:string, exam_period?:string}=} filters
+ * @returns {Promise<Array>}
+ */
+export const getPendingReviews = async (filters = {}) => {
   const res = await request('/instructor/review-list', {
     method: 'PATCH',
-    body: { course_id, exam_period }
+    body: prune(filters)           // <-- ⬅⬅⬅  IMPORTANT LINE
   });
-
-  /* The orchestrator wraps the service response:
-     { data: { message, data: [...] } }
-     └─ we want the inner `data` array.                             */
   return res?.data?.data ?? res?.data ?? res;
 };
 
 /**
- * Send an instructor’s reply to a pending request.
- * Endpoint: PATCH /instructor/reply
+ * Send an instructor reply.
+ * PATCH /instructor/reply
  *
- * @param {Object} payload
- * @param {string}  payload.user_id
- * @param {string}  payload.course_id
- * @param {string}  payload.exam_period
- * @param {string}  payload.instructor_reply_message
- * @param {string}  payload.instructor_action
- * @returns {Promise<Object>}  API response
+ * @param {{
+ *   user_id: string,
+ *   course_id: string,
+ *   exam_period?: string,
+ *   instructor_reply_message: string,
+ *   instructor_action: string
+ * }} payload
  */
-export const postInstructorReply = ({
-  user_id,
-  course_id,
-  exam_period,
-  instructor_reply_message,
-  instructor_action
-}) =>
+export const postInstructorReply = (payload) =>
   request('/instructor/reply', {
     method: 'PATCH',
-    body: {
-      user_id,
-      course_id,
-      exam_period,
-      instructor_reply_message,
-      instructor_action
-    }
+    body: prune(payload)           // <-- ⬅⬅⬅  IMPORTANT LINE
   });

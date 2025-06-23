@@ -4,8 +4,8 @@ import { getPendingReviews } from '../../api/instructor.js';
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    /* Supply filters here if you have a selector UI; blank object = “all”. */
-    const reviews = await getPendingReviews({});
+    /* 👉 No blank strings are sent thanks to prune() inside the API helper. */
+    const reviews = await getPendingReviews();   // ← nothing passed
 
     const tbody = document.querySelector('table tbody');
     if (!reviews.length) {
@@ -14,7 +14,6 @@ window.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    /* Build table rows. */
     tbody.innerHTML = reviews
       .map((r) => {
         const qs = new URLSearchParams({
