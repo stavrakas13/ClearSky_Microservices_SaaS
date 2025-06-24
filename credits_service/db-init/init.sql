@@ -84,7 +84,8 @@ SELECT pg_catalog.setval('public.credits_inst_id_seq', 2, true);
 --
 
 ALTER TABLE ONLY public.credits_inst
-    ADD CONSTRAINT credits_inst_pkey PRIMARY KEY (id);
+  ADD CONSTRAINT uq_credits_inst_name UNIQUE (name);
+
 
 
 --

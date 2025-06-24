@@ -90,7 +90,7 @@ func Diminish(inst_name string, credits int) (bool, error) {
 	return true, nil
 }
 
-func BuyCredits(inst_name string, credits int) (bool, error) {
+func BuyCredits(instName string, credits int) (bool, error) {
 	ctx := context.Background()
 
 	tx, err := Pool.Begin(ctx)
@@ -98,14 +98,27 @@ func BuyCredits(inst_name string, credits int) (bool, error) {
 		log.Printf("Failed to begin transaction: %v", err)
 		return false, err
 	}
-	defer tx.Rollback(ctx) // Safely rollback if anything fails
+	defer tx.Rollback(ctx)
 
-	insertQuery := `UPDATE credits_inst SET credits = credits + $1 WHERE name = $2`
+	// Step 1: Ensure the record exists, insert with 50 credits if not
+	insertQuery := `
+        INSERT INTO credits_inst (name, credits)
+        VALUES ($1, 50)
+        ON CONFLICT (name) DO NOTHING
+    `
+	if _, err := tx.Exec(ctx, insertQuery, instName); err != nil {
+		log.Printf("Failed to insert default credits: %v", err)
+		return false, err
+	}
 
-	_, err = tx.Exec(ctx, insertQuery, credits, inst_name)
-
-	if err != nil {
-		log.Printf("Failed to make the purchase: %v", err)
+	// Step 2: Add the requested credits
+	updateQuery := `
+        UPDATE credits_inst
+        SET credits = credits + $2
+        WHERE name = $1
+    `
+	if _, err := tx.Exec(ctx, updateQuery, instName, credits); err != nil {
+		log.Printf("Failed to update credits: %v", err)
 		return false, err
 	}
 
@@ -115,28 +128,38 @@ func BuyCredits(inst_name string, credits int) (bool, error) {
 	}
 
 	return true, nil
-
 }
 
 func AvailableCredits(instName string) (int, error) {
 	ctx := context.Background()
 
-	const qry = `
+	const selectQuery = `
         SELECT credits
         FROM credits_inst
         WHERE name = $1
     `
+
 	var current int
-	err := Pool.QueryRow(ctx, qry, instName).Scan(&current)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return 0, fmt.Errorf("institution %q not found", instName)
-		}
-		log.Printf("Failed to query available credits for %q: %v", instName, err)
-		return 0, err
+	err := Pool.QueryRow(ctx, selectQuery, instName).Scan(&current)
+	if err == nil {
+		return current, nil
 	}
 
-	return current, nil
+	if err != nil {
+		log.Printf("Institution %q not found, inserting with 0 credits", instName)
+
+		const insertQuery = `
+            INSERT INTO credits_inst (name, credits)
+            VALUES ($1, 50)
+        `
+		if _, insertErr := Pool.Exec(ctx, insertQuery, instName); insertErr != nil {
+			return 0, insertErr
+		}
+		return 50, nil
+	}
+
+	log.Printf("Unexpected error fetching credits: %v", err)
+	return current, err
 }
 
 func NewInstitution(instName string, initialCredits int) (bool, error) {

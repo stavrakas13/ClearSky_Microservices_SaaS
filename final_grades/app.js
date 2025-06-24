@@ -192,45 +192,46 @@ if (missingVars.length > 0) {
   }
 
   // ─── Listener 2: Credit Top-ups
-  {
-    const q2 = await channel.assertQueue('', { exclusive: true });
-    await channel.bindQueue(q2.queue, RABBITMQ_EXCHANGE, RABBITMQ_CREDIT_INCR_KEY);
-    console.log(`🚀  Listening for credit top-ups on "${RABBITMQ_CREDIT_INCR_KEY}"`);
+{
+  const q2 = await channel.assertQueue('', { exclusive: true });
+  await channel.bindQueue(q2.queue, RABBITMQ_EXCHANGE, RABBITMQ_CREDIT_INCR_KEY);
+  console.log(`🚀  Listening for credit top-ups on "${RABBITMQ_CREDIT_INCR_KEY}"`);
 
-    channel.consume(q2.queue, async msg => {
-      if (!msg) return;
-      console.log('📩  Received credit top-up message');
-      const reply = makeReply(msg);
+  channel.consume(q2.queue, async msg => {
+  if (!msg) return;
+  console.log('📩  Received credit top-up message');
+  const reply = makeReply(msg);
 
-      try {
-        const content = msg.content.toString();
-        const { name, amount } = JSON.parse(content);
-        console.log(`🔄  Top-up request for ${name}: +${amount}`);
+  try {
+    const content = msg.content.toString();
+    const { name, amount } = JSON.parse(content);
+    console.log(`🔄  Top-up request for ${name}: +${amount}`);
 
-        if (typeof name !== 'string' || typeof amount !== 'number') {
-          throw new Error('Invalid payload: expected {name: string, amount: number}');
-        }
+    if (typeof name !== 'string' || typeof amount !== 'number') {
+      throw new Error('Invalid payload: expected {name: string, amount: number}');
+    }
 
-        const upd = await creditsColl.updateOne(
-          { name },
-          { $inc: { cred: amount } }
-        );
+    const existing = await creditsColl.findOne({ name });
 
-        if (upd.matchedCount) {
-          console.log(`✅  Increased credit for ${name} by ${amount}`);
-          reply({ status: 'ok', message: `+${amount} to ${name}` });
-        } else {
-          console.warn(`⚠️  No credit doc for ${name}`);
-          reply({ status: 'error', message: `No record for ${name}` });
-        }
+    if (!existing) {
+      // Insert new record with default credit + top-up amount
+      await creditsColl.insertOne({ name, cred: 50 + amount });
+      console.log(`🆕  Created new record for ${name} with default 50 and added ${amount}`);
+      reply({ status: 'ok', message: `Created new record with 50 + ${amount} for ${name}` });
+    } else {
+      // Increment credit for existing record
+      await creditsColl.updateOne({ name }, { $inc: { cred: amount } });
+      console.log(`✅  Increased credit for ${name} by ${amount}`);
+      reply({ status: 'ok', message: `+${amount} to ${name}` });
+    }
 
-        channel.ack(msg);
+    channel.ack(msg);
 
-      } catch (err) {
-        console.error('❌ Error processing credit top-up:', err.message);
-        reply({ status: 'error', message: err.message });
-        channel.nack(msg, false, false);
-      }
-    }, { noAck: false });
+  } catch (err) {
+    console.error('❌ Error processing credit top-up:', err.message);
+    reply({ status: 'error', message: err.message });
+    channel.nack(msg, false, false);
   }
+}, { noAck: false });
+}
 })();

@@ -56,6 +56,7 @@ func AvailableHandler(d amqp.Delivery, ch *amqp.Channel) {
 		return
 	}
 	log.Printf(res.Status)
+	log.Print(res)
 	log.Printf("Available credits %d", res.Credits)
 	d.Ack(false)
 }

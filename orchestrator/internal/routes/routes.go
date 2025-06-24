@@ -37,11 +37,30 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 
 		// NEW: purchase credits endpoint
 		// front-end does: PATCH /purchase { name, amount }
-		r.PATCH("/purchase", func(c *gin.Context) {
-			handlers.HandleCreditsPurchased(c, ch)
-		})
+
 	}
 
+	repr := r.Group("/")
+	repr.Use(mw.JWTAuthMiddleware())
+	repr.Use(func(c *gin.Context) {
+		if c.GetString("role") != "institution_representative" {
+			c.JSON(403, gin.H{"error": "Access restricted to tuinstitution_representative only"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	})
+	{
+		repr.PATCH("/purchase", func(c *gin.Context) {
+			handlers.HandleCreditsPurchased(c, ch)
+		})
+		repr.GET("/mycredits", func(c *gin.Context) {
+			handlers.HandleCreditsAvail(c, ch)
+		})
+		repr.POST("/registration", func(c *gin.Context) {
+			handlers.HandleInstitutionRegistered(c, ch)
+		})
+	}
 	// ────────────────────────────────────────────────────────────────────────
 	//  Student‐only endpoints
 	// ────────────────────────────────────────────────────────────────────────
