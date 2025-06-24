@@ -34,7 +34,9 @@ func SetupRouter(ch *amqp.Channel) *gin.Engine {
 		r.DELETE("/user/delete", func(c *gin.Context) { handlers.HandleUserDelete(c, ch) })
 		r.POST("/user/google-login", func(c *gin.Context) { handlers.HandleUserGoogleLogin(c, ch) })
 		r.PATCH("/user/change-password", func(c *gin.Context) { handlers.HandleUserChangePassword(c, ch) })
-
+		r.GET("/institutions", func(c *gin.Context) {
+			handlers.GetInstitutions(c)
+		})
 		// NEW: purchase credits endpoint
 		// front-end does: PATCH /purchase { name, amount }
 

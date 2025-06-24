@@ -358,6 +358,39 @@ services:
     networks:
       - clearSky-net
 
+  # REGISTRATION DB
+  reg_db:
+    image: postgres:14
+    container_name: reg_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2002
+      POSTGRES_DB: reg_service
+    volumes:
+      - ./registration_service/db-init:/docker-entrypoint-initdb.d:ro
+      - reg_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5443:5432"
+    networks:
+      - clearSky-net
+
+  # REGISTRATION SERVICE
+  registration_service:
+    build:
+      context: ./registration_service
+      dockerfile: Dockerfile
+    container_name: registration_service
+    restart: on-failure
+    depends_on:
+      - reg_db
+      - rabbitmq
+    env_file: ./registration_service/.env
+    ports:
+      - "8083:8080"
+    networks:
+      - clearSky-net
+
 networks:
   clearSky-net:
     driver: bridge
@@ -370,4 +403,5 @@ volumes:
   final_grades_db_data:
   stats_db_data:
   view_db_data:
+  reg_pgdata:
 
