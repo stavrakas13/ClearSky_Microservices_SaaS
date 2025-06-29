@@ -179,7 +179,7 @@ docker compose up --build -d
 
 - Team 12, NTUA ECE, Software as a Service Technologies (2024–2025)
 - See each service's README for contributors.
-- Anastasiadis Vassilis, Gratsia Maria, Thivaios Dimitris, Liakis Dimitris, Mitropoulos Stavros
+- Anastasiadis Vassilis, Gratsia Maria, Thivaios Dimitris, Liakis Dimitris, Mitropoulos Stavros (in alphabetical order)
 
 ---
 
