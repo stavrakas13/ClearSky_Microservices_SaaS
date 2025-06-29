@@ -1,27 +1,186 @@
-# NTUA ECE SAAS 2025 Project
+# Clear Sky SaaS Platform
 
-## Team 12: Clear Sky Software
+**NTUA ECE SAAS 2025 – Team 12**
 
-### Overview
+---
 
-This repository contains the deliverables for the Software as a Service (SAAS) course project at NTUA ECE, academic year 2025.
+## Project Overview
 
-### Team Members
+Clear Sky is a modular, production-grade SaaS platform for academic institutions, designed to manage student grades, review workflows, user authentication, institutional credits, and more. The system is architected as a set of loosely coupled microservices, communicating asynchronously via RabbitMQ, and is fully containerized for easy deployment and scalability.
 
-- Team 12: Clear Sky Software
+This project was developed following a formal Software Requirements Specification (SRS) and is accompanied by comprehensive UML documentation (Visual Paradigm Project, VPP), ensuring maintainability, clarity, and extensibility.
 
-### Project Description
+---
 
-Clear Sky Software is focused on delivering innovative cloud-based solutions as part of the SAAS 2025 curriculum. The project aims to demonstrate best practices in software engineering, cloud deployment, and collaborative development.
+## Key Features
 
-### Getting Started
+- **User Authentication & Authorization:** Secure login (classic & Google OAuth2), JWT-based session management, and role-based access control.
+- **Grade Management:** Instructors can upload grades via Excel; students can view personal grades and statistics.
+- **Review Workflow:** Students submit grade review requests; instructors reply and manage review status.
+- **Institutional Credits:** Institutions manage and purchase credits for grade submissions.
+- **Statistics & Analytics:** Dynamic grade histograms and performance analytics for courses.
+- **Admin & Registration:** Institution onboarding and user management.
+- **Modern Web UI:** Responsive front-end with role-based dashboards.
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   ```
-2. Follow the setup instructions in the documentation.
+---
 
-### License
+## Architecture
 
-This project is for educational purposes as part of the NTUA ECE SAAS course.
+The platform is composed of the following microservices:
+
+- **Orchestrator:** API gateway and message router (Go, Gin)
+- **User Management Service:** Registration, login, JWT, user roles (Go)
+- **Google Auth Service:** Google OAuth2 login, JWT issuance (Go)
+- **Credits Service:** Institution credits management (Go, PostgreSQL)
+- **Registration Service:** Institution onboarding (Go, PostgreSQL)
+- **Initial/Final Grades Services:** Grade import from Excel (Node.js, MongoDB)
+- **Stats Service:** Grade statistics and analytics (Node.js, MySQL)
+- **View Grades Service:** Student grade viewing (Node.js, MySQL)
+- **Student Request Review Service:** Student review requests (Go, PostgreSQL)
+- **Instructor Review Reply Service:** Instructor responses (Go, PostgreSQL)
+- **Front-end:** Express/EJS web UI (Node.js)
+
+All services communicate via RabbitMQ (`clearSky.events` exchange). The system is orchestrated using Docker Compose for seamless multi-service deployment.
+
+---
+
+## Documentation
+
+- **SRS:** The project strictly follows a detailed Software Requirements Specification (SRS) which defines all functional and non-functional requirements.
+- **UML & Design:** Full UML diagrams (class, sequence, deployment, etc.) are available in Visual Paradigm Project (VPP) format in the `/architecture` folder.
+- **API Contracts:** Each service includes its own README with message formats and endpoint documentation.
+
+---
+
+## Technology Stack
+
+- **Languages:** Go 1.24+, Node.js 18+/20+
+- **Databases:** PostgreSQL, MySQL, MongoDB, SQLite (for some auth)
+- **Messaging:** RabbitMQ (direct exchange)
+- **Web:** Express.js, EJS, Gin
+- **Containerization:** Docker, Docker Compose
+- **Auth:** JWT, Google OAuth2
+- **Testing & Tooling:** Visual Paradigm (UML), Postman, npm, go modules
+
+---
+
+## Directory Structure
+
+```
+/
+├── orchestrator/                  # API gateway and message router
+├── user_management_service/       # Auth, JWT, user DB
+├── google_auth_service/           # Google OAuth2 login
+├── credits_service/               # Institution credits (Postgres)
+├── registration_service/          # Institution registration (Postgres)
+├── initial_grades/                # Initial grade import (MongoDB)
+├── final_grades/                  # Final grade import (MongoDB)
+├── stats_service/                 # Grade statistics (MySQL)
+├── View_personal_grades/          # Student grade viewing (MySQL)
+├── student_request_review_service/# Student review requests (Postgres)
+├── instructor_review_reply_service/# Instructor review replies (Postgres)
+├── front-end/                     # Express/EJS UI
+├── architecture/                  # UML, SRS, VPP documentation
+├── docker-compose.yml             # Main Compose file (all services)
+└── ...
+```
+
+---
+
+## How to Run
+
+### 1. Prerequisites
+
+- **Docker** and **Docker Compose v2+**
+- (Optional for local development) **Go 1.24+** and **Node.js 18+**
+
+### 2. Configuration
+
+- Each microservice requires its own `.env` file.  
+  Copy `.env.example` or create a `.env` in each service directory.
+- Set environment variables for database connections, RabbitMQ, Google OAuth, and JWT secrets.
+- For Google Auth: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URL`, `JWT_SECRET`.
+
+### 3. Build & Launch
+
+```bash
+docker compose down -v --remove-orphans
+docker compose up --build -d
+```
+
+- Check that all containers are running:
+  ```bash
+  docker compose ps
+  ```
+- View logs:
+  ```bash
+  docker compose logs -f
+  ```
+
+### 4. Access Points
+
+- **Front-end Web UI:** [http://localhost:3000](http://localhost:3000)
+- **Orchestrator API:** [http://localhost:8080](http://localhost:8080)
+- **User Management:** [http://localhost:8082](http://localhost:8082)
+- **Google Auth:** [http://localhost:8086](http://localhost:8086)
+- **RabbitMQ UI:** [http://localhost:15673](http://localhost:15673) (guest/guest)
+
+### 5. Database Ports
+
+- **PostgreSQL:** 5440–5443 (various services)
+- **MySQL:** 3306–3307
+- **MongoDB:** 27017–27018
+
+### 6. Stopping & Cleaning
+
+- Stop all services:
+  ```bash
+  docker compose down
+  ```
+- Remove all containers, networks, and volumes:
+  ```bash
+  docker compose down -v --remove-orphans
+  ```
+
+---
+
+## Development & Troubleshooting
+
+- Inspect logs for a specific service:
+  ```bash
+  docker compose logs -f <service>
+  ```
+- Restart a service after code changes:
+  ```bash
+  docker compose up --build -d <service>
+  ```
+- Database access:  
+  Use `psql`, `mysql`, or `mongo` CLI tools to connect to the respective DB containers.
+
+- Common issues:
+  - **"relation ... does not exist"**: DB init script did not run. Remove volumes and restart.
+  - **Connection refused**: Check service health and correct host/port.
+  - **Service restart loops**: Inspect logs for missing environment variables or misconfiguration.
+
+---
+
+## Why This Project Stands Out
+
+- **Enterprise-Ready:** Clean microservices separation, message-driven, and scalable.
+- **Formal Documentation:** SRS and UML artifacts (VPP) for professional maintainability.
+- **Full DevOps Pipeline:** Dockerized, with easy local and cloud deployment.
+- **Modern Stack:** Uses current best practices in Go, Node.js, and cloud-native design.
+- **Portfolio-Grade:** Demonstrates advanced backend, distributed systems, and system design skills.
+
+---
+
+## Authors
+
+- Team 12, NTUA ECE, Software as a Service Technologies (2024–2025)
+- See each service's README for contributors.
+
+---
+
+## License
+
+MIT (see individual service folders for details)
