@@ -89,6 +89,9 @@ All services communicate via RabbitMQ (`clearSky.events` exchange). The system i
 
 ## How to Run
 
+Be sure that the necessary ports are free.
+For google auth, you need to set yourself the .env.
+
 ### 1. Prerequisites
 
 - **Docker** and **Docker Compose v2+**
@@ -121,8 +124,6 @@ docker compose up --build -d
 
 - **Front-end Web UI:** [http://localhost:3000](http://localhost:3000)
 - **Orchestrator API:** [http://localhost:8080](http://localhost:8080)
-- **User Management:** [http://localhost:8082](http://localhost:8082)
-- **Google Auth:** [http://localhost:8086](http://localhost:8086)
 - **RabbitMQ UI:** [http://localhost:15673](http://localhost:15673) (guest/guest)
 
 ### 5. Database Ports
@@ -178,6 +179,7 @@ docker compose up --build -d
 
 - Team 12, NTUA ECE, Software as a Service Technologies (2024–2025)
 - See each service's README for contributors.
+- Anastasiadis Vassilis, Gratsia Maria, Thivaios Dimitris, Liakis Dimitris, Mitropoulos Stavros
 
 ---
 
