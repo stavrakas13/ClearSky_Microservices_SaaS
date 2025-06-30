@@ -183,6 +183,12 @@ docker compose up --build -d
 
 ---
 
+## My Contribution
+- I had significant contribution to this project mainly focused on Microservices Development, Orchestration & Architecture & Deployment,.
+
+- ![image](https://github.com/user-attachments/assets/4cd8b2d5-977b-41ee-a00a-8ee566c3cc12)
+ 
+
 ## License
 
 MIT (see individual service folders for details)
