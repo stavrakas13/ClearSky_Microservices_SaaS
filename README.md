@@ -157,6 +157,11 @@ docker compose up --build -d
   ```
 - Database access:  
   Use `psql`, `mysql`, or `mongo` CLI tools to connect to the respective DB containers.
+- Initial user:
+    username: admin
+    password: admin
+  Then you can create your roles.
+  There is only one issue, we havent integrated the role of the Institution Representative into JWT body.
 
 - Common issues:
   - **"relation ... does not exist"**: DB init script did not run. Remove volumes and restart.
